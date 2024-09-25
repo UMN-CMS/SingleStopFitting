@@ -60,7 +60,7 @@ function activate_venv(){
 }
 
 function version_info(){
-    local packages_to_show=("coffea" "awkward" "uproot" "dask" "distributed" "dask-awkward" "dask-histogram" "fsspec_xrootd")
+    local packages_to_show=("gpytorch" "numpyro" "pyro-ppl" "torch" "numpy")
     local package_info="$(pip3 show "${packages_to_show[@]}")"
     for package in "${packages_to_show[@]}"; do
         awk -v package="$package" 'BEGIN{pat="Name: " package } a==1{printf("%s: %s\n", package, $2); exit} $0~pat{a++}' \
@@ -181,13 +181,11 @@ function rcmode(){
     fi
 
     welcome_message="
-             Single Stop Analysis Framework
+            Single Stop Statistical Framework
 ........................................................
   Python version is $(python3 --version)
   Using environment $VIRTUAL_ENV
 ........................................................
-  Run the following command to get started      
-  $ python3 -m analyzer --help
 "
     IFS=$'\n' read -rd '' -a split_welcome_message <<<"$welcome_message"
     mkdir -p .private
