@@ -1,11 +1,10 @@
 from collections import Counter, namedtuple
-
-import analyzer.plotting as plotting
 import matplotlib.pyplot as plt
 import matplotlib as mpl
 import numpy as np
 import torch
 from mpl_toolkits.axes_grid1 import make_axes_locatable
+import mplhep
 
 from .regression import getPrediction
 from .utils import pointsToGrid
@@ -97,7 +96,6 @@ def plotGaussianProcess(ax, pobj, mask=None):
 def generatePulls(ax, observed, model, observed_title="", mask=None, domain=None):
     edges, data, variances = observed
     mean, model_variance = model
-
 
     model_obj = plotting.PlotObject.fromNumpy((mean, edges), model_variance, mask=mask)
     obs_obj = plotting.PlotObject.fromNumpy(

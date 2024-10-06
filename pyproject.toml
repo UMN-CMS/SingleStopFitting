@@ -17,6 +17,7 @@ pyro-ppl = "*"
 numpyro = {version="*", extras=["cpu"]} 
 numexpr = ">=2.8.4"
 argcomplete='^3.4.0'
+#mplhep = "*"
 
 [tool.poetry.group.dev.dependencies]
 black = "^23.3.0"

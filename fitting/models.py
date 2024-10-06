@@ -5,7 +5,6 @@ import gpytorch
 import torch
 from gpytorch.variational import CholeskyVariationalDistribution, VariationalStrategy
 
-
 class GaussianMean(gpytorch.means.Mean):
     def __init__(self, prior=None, init_mean=0.0, init_sigma=1.0, init_scale=1.0):
         super().__init__()

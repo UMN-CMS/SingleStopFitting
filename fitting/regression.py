@@ -4,7 +4,9 @@ from dataclasses import dataclass
 
 import gpytorch
 import torch
+from rich import print
 from rich.progress import Progress
+
 from .models import ExactAnyKernelModel
 
 DataValues = namedtuple("DataValues", "X Y V E")
@@ -25,12 +27,15 @@ class DataValues:
 
 
 def makeRegressionData(
-    histogram, mask_function=None, exclude_less=None, get_mask=False
+    histogram,
+    mask_function=None,
+    exclude_less=None,
+    get_mask=False,
+    domain_mask_function=None,
 ):
     if mask_function is None:
         mask_function = lambda x1, x2: (
-            torch.full_like(x1, False, dtype=torch.bool),
-            torch.full_like(x2, False, dtype=torch.bool),
+            torch.full_like(x1, False, dtype=torch.bool)
         )
 
     edges_x1 = torch.from_numpy(histogram.axes[0].edges)
@@ -49,9 +54,16 @@ def makeRegressionData(
     else:
         domain_mask = torch.full_like(bin_values, False, dtype=torch.bool)
 
+    if domain_mask_function is not None:
+        domain_mask = domain_mask & domain_mask_function(
+            centers_grid[:, :, 0], centers_grid[:, :, 1]
+        )
+
     centers_grid = torch.stack((centers_grid_x1, centers_grid_x2), axis=2)
-    m1, m2 = mask_function(centers_grid[:, :, 0], centers_grid[:, :, 1])
-    centers_mask = (m1 | domain_mask) & (m2 | domain_mask)
+
+
+    m = mask_function(centers_grid[:, :, 0], centers_grid[:, :, 1])
+    centers_mask = m | domain_mask
     flat_centers = torch.flatten(centers_grid, end_dim=1)
     flat_bin_values = torch.flatten(bin_values)
     flat_bin_vars = torch.flatten(bin_vars)
@@ -85,9 +97,11 @@ def createModel(train_data, kernel=None, model_maker=None, learn_noise=False, **
         model = model_maker(train_data.X, train_data.Y, likelihood, **kwargs)
     return model, likelihood
 
+
 def get_lr(optimizer):
     for param_group in optimizer.param_groups:
-        return param_group['lr']
+        return param_group["lr"]
+
 
 def optimizeHyperparams(
     model,
@@ -105,12 +119,11 @@ def optimizeHyperparams(
     if mll is None:
         mll = gpytorch.mlls.ExactMarginalLogLikelihood(likelihood, model)
 
-
     print(f"step_size={iterations//3}")
     scheduler = torch.optim.lr_scheduler.StepLR(
-       optimizer, step_size=iterations//3, gamma=0.1
+        optimizer, step_size=iterations // 3, gamma=0.1
     )
-    #scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, "min")
+    # scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, "min")
 
     context = Progress() if bar else contextlib.nullcontext()
     evidence = None
@@ -125,13 +138,13 @@ def optimizeHyperparams(
 
             loss.backward()
             optimizer.step()
-            #scheduler.step(loss)
+            # scheduler.step(loss)
             scheduler.step()
 
-            #slr = get_lr(optimizer)
-            slr= scheduler.get_last_lr()[0]
+            # slr = get_lr(optimizer)
+            slr = scheduler.get_last_lr()[0]
 
-            #if slr < 1e-3 * lr:
+            # if slr < 1e-3 * lr:
             #    print(
             #        f"Iter {i} (lr={slr}): Loss = {round(loss.item(),4)}"
             #    )
@@ -146,9 +159,7 @@ def optimizeHyperparams(
                 progress.refresh()
             else:
                 if (i % (iterations // 10) == 0) or i == iterations - 1:
-                    print(
-                        f"Iter {i} (lr={slr}): Loss = {round(loss.item(),4)}"
-                    )
+                    print(f"Iter {i} (lr={slr}): Loss = {round(loss.item(),4)}")
                     evidence = float(loss.item())
                     pass
 
@@ -167,11 +178,10 @@ def getPrediction(model, likelihood, test_data):
 
 
 def getBlindedMask(inputs, pred_mean, test_mean, test_var, mask_func):
-    imask_x, imask_y = mask_func(inputs[:, 0], inputs[:, 1])
-    mask = imask_x & imask_y
+    mask = mask_func(inputs[:, 0], inputs[:, 1])
     return mask
-    pred_mean = pred_mean[mask]
-    test_mean = test_mean[mask]
-    test_var = test_var[mask]
-    num = torch.count_nonzero(mask)
-    return torch.sum((test_mean - pred_mean) ** 2 / test_var) / num
+    # pred_mean = pred_mean[mask]
+    # test_mean = test_mean[mask]
+    # test_var = test_var[mask]
+    # num = torch.count_nonzero(mask)
+    # return torch.sum((test_mean - pred_mean) ** 2 / test_var) / num
