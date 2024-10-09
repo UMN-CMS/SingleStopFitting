@@ -54,13 +54,15 @@ def makeRegressionData(
     else:
         domain_mask = torch.full_like(bin_values, False, dtype=torch.bool)
 
-    if domain_mask_function is not None:
-        domain_mask = domain_mask & domain_mask_function(
-            centers_grid[:, :, 0], centers_grid[:, :, 1]
-        )
 
     centers_grid = torch.stack((centers_grid_x1, centers_grid_x2), axis=2)
 
+    if domain_mask_function is not None:
+        domain_mask = domain_mask | domain_mask_function(
+            centers_grid[:, :, 0], centers_grid[:, :, 1]
+        )
+
+    print(domain_mask)
 
     m = mask_function(centers_grid[:, :, 0], centers_grid[:, :, 1])
     centers_mask = m | domain_mask
@@ -117,13 +119,15 @@ def optimizeHyperparams(
     likelihood.train()
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
     if mll is None:
-        mll = gpytorch.mlls.ExactMarginalLogLikelihood(likelihood, model)
+        #mll = gpytorch.mlls.ExactMarginalLogLikelihood(likelihood, model)
+        mll = gpytorch.mlls.LeaveOneOutPseudoLikelihood(likelihood, model)
+
 
     print(f"step_size={iterations//3}")
     scheduler = torch.optim.lr_scheduler.StepLR(
         optimizer, step_size=iterations // 3, gamma=0.1
     )
-    # scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, "min")
+    #scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, "min")
 
     context = Progress() if bar else contextlib.nullcontext()
     evidence = None
@@ -138,7 +142,7 @@ def optimizeHyperparams(
 
             loss.backward()
             optimizer.step()
-            # scheduler.step(loss)
+            #scheduler.step(loss)
             scheduler.step()
 
             # slr = get_lr(optimizer)

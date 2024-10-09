@@ -7,13 +7,14 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+import numpy as np
+
 import fitting.utils as fit_utils
 import gpytorch
 import hist
 import linear_operator
 import matplotlib as mpl
 import matplotlib.pyplot as plt
-import numpy as np
 import torch
 import uhi
 from gpytorch.kernels import ScaleKernel as SK
@@ -206,6 +207,11 @@ def makeSlicePlots(pred, test_data, hist, window, dim, save_dir):
         plt.close(f)
 
 
+def bumpCut(X, Y):
+    m = Y > (1 - 200 / X)
+    return m
+
+
 def doCompleteRegression(
     inhist,
     window_func,
@@ -214,12 +220,11 @@ def doCompleteRegression(
     save_dir="plots",
 ):
 
-    train_data = regression.makeRegressionData(inhist, window_func)#, exclude_less=0.001)
+    train_data = regression.makeRegressionData(
+        inhist, window_func, domain_mask_function=bumpCut, exclude_less=0.001
+    )
     test_data, domain_mask = regression.makeRegressionData(
-        inhist,
-        None,
-        exclude_less=0.001,
-        get_mask=True,
+        inhist, None, get_mask=True, domain_mask_function=bumpCut, exclude_less=0.001
     )
     train_transform = transformations.getNormalizationTransform(train_data)
     normalized_train_data = train_transform.transform(train_data)
@@ -228,6 +233,7 @@ def doCompleteRegression(
     if torch.cuda.is_available() and use_cuda:
         train = normalized_train_data.toGpu()
         norm_test = normalized_test_data.toGpu()
+        print("USING CUDA")
     else:
         train = normalized_train_data
         norm_test = normalized_test_data
@@ -345,22 +351,23 @@ def doCompleteRegression(
     return save_data
 
 
-def createWindowForSignal(signal_data, axes=(150, 0.05)):
+def createWindowForSignal(signal_data, axes=(250, 0.08)):
     max_idx = torch.argmax(signal_data.Y)
     max_x = signal_data.X[max_idx].round(decimals=2)
     return windowing.EllipseWindow(max_x.tolist(), list(axes))
 
 
-def doRegressionForSignal(signal_name, signal_hist, bkg_hist, kernel, base_dir, kernel_name=""):
+def doRegressionForSignal(
+    signal_name, signal_hist, bkg_hist, kernel, base_dir, kernel_name=""
+):
     logging.info(f"Signal is: {signal_name}")
 
-    inducing_ratio = 1
+    inducing_ratio = 2
 
     def mm(train_x, train_y, likelihood, kernel, **kwargs):
         return models.InducingPointModel(
             train_x, train_y, likelihood, kernel, inducing=train_x[::inducing_ratio]
         )
-
 
     if signal_hist:
         signal_regression_data = regression.makeRegressionData(signal_hist)
@@ -384,7 +391,9 @@ def doRegressionForSignal(signal_name, signal_hist, bkg_hist, kernel, base_dir, 
     #     dir_data["window"] = window.toDict()
     # dirdata.setGlobal(dir_data)
 
-    d = doCompleteRegression(bkg_hist, window, save_dir=path, model_maker=mm, kernel=kernel)
+    d = doCompleteRegression(
+        bkg_hist, window, save_dir=path, model_maker=mm, kernel=kernel
+    )
 
     # if signal_hist:
     #     r = makeSigBkgPlot(
@@ -400,7 +409,12 @@ def doEstimationForSignals(signals, bkg_hist, kernel, base_dir, kernel_name=""):
     for signal_name, signal_hist in signals:
         i = i + 1
         doRegressionForSignal(
-            signal_name, signal_hist, bkg_hist, kernel, base_dir, kernel_name=kernel_name
+            signal_name,
+            signal_hist,
+            bkg_hist,
+            kernel,
+            base_dir,
+            kernel_name=kernel_name,
         )
 
         plt.close("all")
@@ -408,7 +422,10 @@ def doEstimationForSignals(signals, bkg_hist, kernel, base_dir, kernel_name=""):
 
 def main():
 
-    with open("regression_results/2018_Signal312_ratio_m24_vs_m14.pkl", "rb") as f:
+    with open(
+        "regression_results/2018_Signal312_nn_uncomp_0p67_m14_vs_mChiUncompRatio.pkl",
+        "rb",
+    ) as f:
         results = pkl.load(f)
 
     print(results.keys())
@@ -439,7 +456,7 @@ def main():
         (sn, results[sn, "Signal312"]["hist_collection"]["histogram"]["central", ...])
         for sn in signal_hist_names
     ]
-    signals_to_scan.append((None, None))
+    # signals_to_scan.append((None, None))
 
     # nnrbf256 = SK(models.NNRBFKernel(odim=2, layer_sizes=(256, 128, 16)))
     # nnrbf1024 = SK(models.NNRBFKernel(odim=2, layer_sizes=(1024, 1024, 16)))
@@ -466,28 +483,34 @@ def main():
 
     # grq = SK(models.GeneralRQ(ard_num_dims=2))
 
-    # rbf = SK(gpytorch.kernels.RBFKernel(ard_num_dims=2))
+    rbf = SK(gpytorch.kernels.RBFKernel(ard_num_dims=2))
 
-    # grbf = SK(models.GeneralRBF(ard_num_dims=2))
+    grbf = SK(models.GeneralRBF(ard_num_dims=2))
     # gsmk = models.GeneralSpectralMixture(ard_num_dims=2, num_mixtures=4)
 
     # smk = gpytorch.kernels.SpectralMixtureKernel(num_mixtures=12, ard_num_dims=2)
 
     kernels = {
-        # "rbf": rbf,
+        #"rbf": rbf,
         # "smk": smk,
         # "grq": grq,
+        # "grbf": grbf,
         # "nngrf" : nngrbf,
         # "nnsmk_tiny": nnsmk_tiny,
         # "nnrbf_deep": nnrbf_deep,
         # "nnrbf_huge": nnrbf_huge,
         # "nnrbf_tiny": nnrbf_tiny,
         # "nnrbf_32_16_8": nnrbf32_16_8,
-        "nnrbf_32_32_8": SK(models.NNRBFKernel(odim=2, layer_sizes=(32, 32, 8))),
+        # "nnrbf_32_32_8": SK(models.NNRBFKernel(odim=2, layer_sizes=(32, 32, 8))),
+        # "nnrbf_256_64_16": SK(models.NNRBFKernel(odim=2, layer_sizes=(256, 64, 16))),
+        # "nnrbf_64_32_16": SK(models.NNRBFKernel(odim=2, layer_sizes=(64, 32, 16))),
+        # "nnrbf_64_8": SK(models.NNRBFKernel(odim=2, layer_sizes=(64, 8))),
+        "nnrbf_32_8": SK(models.NNRBFKernel(odim=2, layer_sizes=(32, 8))),
     }
 
-    p = Path("allscans")
+    p = Path("allscans/uncompnn/")
     for n, k in kernels.items():
+        print(n)
         doEstimationForSignals(signals_to_scan, bkg_hist, k, p / n, kernel_name=n)
 
 
