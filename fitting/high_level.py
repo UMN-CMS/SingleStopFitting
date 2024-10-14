@@ -1,4 +1,5 @@
 import itertools as it
+import json
 import logging
 import pickle as pkl
 import random
@@ -7,14 +8,13 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-import numpy as np
-
 import fitting.utils as fit_utils
 import gpytorch
 import hist
 import linear_operator
 import matplotlib as mpl
 import matplotlib.pyplot as plt
+import numpy as np
 import torch
 import uhi
 from gpytorch.kernels import ScaleKernel as SK
@@ -77,7 +77,7 @@ def makeSigBkgPlot(train_data, test_data, signal_data, window):
     return {"sig_bkg": (fig, ax)}
 
 
-def makeDiagnosticPlots(pred, raw_test, raw_train, raw_hist, mask=None):
+def makeDiagnosticPlots(pred, raw_test, raw_train, mask=None, inducing_points=None):
     ret = {}
     if mask is not None:
         squares = makeSquares(raw_test.X[mask], raw_test.E)
@@ -89,6 +89,10 @@ def makeDiagnosticPlots(pred, raw_test, raw_train, raw_hist, mask=None):
         else:
             poly = Polygon(points, edgecolor="green", linewidth=3, fill=False)
             ax.add_patch(poly)
+
+    def addInducing(ax):
+        if inducing_points is not None:
+            ax.scatter(inducing_points[:, 0], inducing_points[:, 1], c="red", s=1)
 
     pred_mean = pred.Y
     pred_variances = pred.V
@@ -111,6 +115,13 @@ def makeDiagnosticPlots(pred, raw_test, raw_train, raw_hist, mask=None):
     ret["gpr_mean"] = (fig, ax)
 
     fig, ax = plt.subplots(layout="tight")
+    f = simpleGrid(ax, raw_test.E, raw_test.X, pred_mean)
+    ax.set_title("GPR Mean Prediction")
+    # plotting.addTitles2D(ax, plotting.PlotObject.fromHist(raw_hist))
+    addInducing(ax)
+    ret["inducing_gpr_mean"] = (fig, ax)
+
+    fig, ax = plt.subplots(layout="tight")
     simpleGrid(ax, raw_test.E, raw_test.X, raw_test.Y)
     ax.set_title("Observed Outputs")
     addWindow(ax)
@@ -131,6 +142,14 @@ def makeDiagnosticPlots(pred, raw_test, raw_train, raw_hist, mask=None):
     ret["predicted_variances"] = (fig, ax)
 
     fig, ax = plt.subplots(layout="tight")
+    f = simpleGrid(ax, raw_test.E, raw_test.X, torch.sqrt(pred.V) / raw_test.Y)
+    f.set_clim(0, 1)
+    ax.set_title("Relative Uncertainty (std/val)")
+    # plotting.addTitles2D(ax, plotting.PlotObject.fromHist(raw_hist))
+    addWindow(ax)
+    ret["relative_uncertainty"] = (fig, ax)
+
+    fig, ax = plt.subplots(layout="tight")
     f = simpleGrid(
         ax,
         raw_test.E,
@@ -138,7 +157,7 @@ def makeDiagnosticPlots(pred, raw_test, raw_train, raw_hist, mask=None):
         (raw_test.Y - pred_mean) / torch.sqrt(pred.V),
         cmap="coolwarm",
     )
-    f.set_clim(-5, 5)
+    f.set_clim(-2.5, 2.5)
     ax.set_title("Pulls")
     # plotting.addTitles2D(ax, plotting.PlotObject.fromHist(raw_hist))
     ax.cax.set_ylabel(r"$\frac{N_{obs}-N_{pred}}{\sigma_{p}}$")
@@ -153,7 +172,7 @@ def makeDiagnosticPlots(pred, raw_test, raw_train, raw_hist, mask=None):
         (raw_test.Y - pred_mean) / torch.sqrt(raw_test.V),
         cmap="coolwarm",
     )
-    f.set_clim(-5, 5)
+    f.set_clim(-2.5, 2.5)
     ax.set_title("Pulls")
     # plotting.addTitles2D(ax, plotting.PlotObject.fromHist(raw_hist))
     ax.cax.set_ylabel(r"$\frac{N_{obs}-N_{pred}}{\sigma_{o}}$")
@@ -161,15 +180,35 @@ def makeDiagnosticPlots(pred, raw_test, raw_train, raw_hist, mask=None):
     ret["pulls_obs"] = (fig, ax)
 
     fig, ax = plt.subplots(layout="tight")
-    all_pulls = (raw_test.Y - pred_mean) / torch.sqrt(pred.V)
-    # p = plotting.PlotObject.fromNumpy(
-    #     np.histogram(all_pulls[torch.abs(all_pulls) < np.inf], bins=20)
-    # )
-    # print("HERE")
-    # plotting.drawAs1DHist(ax, p, yerr=False)
-    # ax.set_xlabel(r"$\frac{N_{obs}-N_{pred}}{\sigma_{p}}$")
-    # ax.set_ylabel("Count")
-    # ret["pulls_hist"] = (fig, ax)
+
+
+    all_pulls = (raw_test.Y - pred_mean) / torch.sqrt(raw_test.V)
+
+    
+    p = all_pulls[torch.abs(all_pulls) < np.inf]
+    p = all_pulls
+    ax.hist(p, bins=np.linspace(-5.0,5.,21), density=True)
+    X = torch.linspace(-5,5, 100)
+    g = torch.distributions.Normal(0,1)
+    Y = torch.exp(g.log_prob(X))
+    ax.plot(X,Y)
+
+    ax.set_xlabel(r"$\frac{N_{obs}-N_{pred}}{\sigma_{p}}$")
+    ax.set_ylabel("Count")
+    ret["global_pulls_hist"] = (fig, ax)
+
+    
+    fig, ax = plt.subplots(layout="tight")
+    p = all_pulls[mask]
+    ax.hist(p, bins=np.linspace(-5.0,5.0,21), density=True)
+    X = torch.linspace(-5,5, 100)
+    g = torch.distributions.Normal(0,1)
+    Y = torch.exp(g.log_prob(X))
+    ax.plot(X,Y)
+
+    ax.set_xlabel(r"$\frac{N_{obs}-N_{pred}}{\sigma_{p}}$")
+    ax.set_ylabel("Count")
+    ret["window_pulls_hist"] = (fig, ax)
 
     return ret
 
@@ -220,11 +259,16 @@ def doCompleteRegression(
     save_dir="plots",
 ):
 
+    min_counts = 50
     train_data = regression.makeRegressionData(
-        inhist, window_func, domain_mask_function=bumpCut, exclude_less=0.001
+        inhist, window_func, domain_mask_function=bumpCut, exclude_less=min_counts
     )
     test_data, domain_mask = regression.makeRegressionData(
-        inhist, None, get_mask=True, domain_mask_function=bumpCut, exclude_less=0.001
+        inhist,
+        None,
+        get_mask=True,
+        domain_mask_function=bumpCut,
+        exclude_less=min_counts,
     )
     train_transform = transformations.getNormalizationTransform(train_data)
     normalized_train_data = train_transform.transform(train_data)
@@ -247,6 +291,7 @@ def doCompleteRegression(
 
         if hasattr(model.covar_module, "initialize_from_data"):
             model.covar_module.initialize_from_data(train.X, train.Y)
+
         if torch.cuda.is_available() and use_cuda:
             model = model.cuda()
             likelihood = likelihood.cuda()
@@ -274,30 +319,45 @@ def doCompleteRegression(
             raw_pred_dist = type(raw_pred_dist)(
                 psd_pred_dist.mean, psd_pred_dist.covariance_matrix.to_dense()
             )
+            slope = train_transform.transform_y.slope
+            intercept = train_transform.transform_y.intercept
+            pred_dist = fit_utils.affineTransformMVN(psd_pred_dist, slope, intercept)
+
+            pred_data = regression.DataValues(
+                test_data.X,
+                pred_dist.mean,
+                pred_dist.variance,
+                test_data.E,
+            )
+
+            good_bin_mask = test_data.Y > 500
+            global_chi2_bins = float(
+                torch.sum(
+                    (pred_data.Y[good_bin_mask] - test_data.Y[good_bin_mask]) ** 2
+                    / test_data.V[good_bin_mask]
+                )
+                / test_data.Y[good_bin_mask].shape[0]
+            )
+            print(f"Global Chi2/bins = {global_chi2_bins}")
+            if global_chi2_bins < 1.5:
+                ok = True
+            else:
+                logger.warning("Bad global Chi2, retrying")
             ok = True
+
         except (
             linear_operator.utils.errors.NanError,
             linear_operator.utils.errors.NotPSDError,
         ) as e:
             lr = lr + random.random() / 1000
-            logger.warn(f"CHOLESKY FAILED: retrying with lr={round(lr,3)}")
-            logger.warn(e)
+            logger.warning(f"CHOLESKY FAILED: retrying with lr={round(lr,3)}")
+            logger.warning(e)
 
-    logger.warn("Done training")
-
-    slope = train_transform.transform_y.slope
-    intercept = train_transform.transform_y.intercept
-    pred_dist = fit_utils.affineTransformMVN(psd_pred_dist, slope, intercept)
-
-    pred_data = regression.DataValues(
-        test_data.X,
-        pred_dist.mean,
-        pred_dist.variance,
-        test_data.E,
-    )
+    logger.warning("Done training")
 
     data = {
         "evidence": evidence,
+        "global_chi2/bins": global_chi2_bins,
         "model_string": str(model),
     }
 
@@ -321,20 +381,21 @@ def doCompleteRegression(
                 "avg_abs_pull": float(avg_pull),
             }
         )
-        print(f"Chi^2/bins = {chi2}")
         print(f"Avg Abs pull = {avg_pull}")
+        print(f"Chi^2/bins = {chi2}")
     else:
         mask = None
+    print(f"Global Chi2/bins = {global_chi2_bins}")
 
     save_dir = Path(save_dir)
     save_dir.mkdir(exist_ok=True, parents=True)
     if True:
-        diagnostic_plots = makeDiagnosticPlots(
-            pred_data, test_data, train_data, inhist, mask
-        )
+        diagnostic_plots = makeDiagnosticPlots(pred_data, test_data, train_data, mask)
         saveDiagnosticPlots(diagnostic_plots, save_dir)
         # makeSlicePlots(pred_data, test_data, inhist, window_func, 0, save_dir)
         # makeSlicePlots(pred_data, test_data, inhist, window_func, 1, save_dir)
+
+    model_dict = model.state_dict()
 
     save_data = RegressionModel(
         input_data=inhist,
@@ -346,12 +407,15 @@ def doCompleteRegression(
         raw_posterior_dist=raw_pred_dist,
         posterior_dist=pred_dist,
     )
-    # torch.save(save_data, save_dir / "train_model.pth")
-    # dir_data.setGlobal(data)
+    torch.save(save_data, save_dir / "train_model.pth")
+    torch.save(save_data, save_dir / "model_dict.pth")
+    torch.save(pred_dist, save_dir / "posterior_latent.pth")
+    with open(save_dir / "info.json", "w") as f:
+        json.dump(data, f)
     return save_data
 
 
-def createWindowForSignal(signal_data, axes=(250, 0.08)):
+def createWindowForSignal(signal_data, axes=(150, 0.06)):
     max_idx = torch.argmax(signal_data.Y)
     max_x = signal_data.X[max_idx].round(decimals=2)
     return windowing.EllipseWindow(max_x.tolist(), list(axes))
@@ -365,6 +429,7 @@ def doRegressionForSignal(
     inducing_ratio = 2
 
     def mm(train_x, train_y, likelihood, kernel, **kwargs):
+        # return models.ExactAnyKernelModel(train_x, train_y, likelihood, kernel=kernel)
         return models.InducingPointModel(
             train_x, train_y, likelihood, kernel, inducing=train_x[::inducing_ratio]
         )
@@ -420,68 +485,46 @@ def doEstimationForSignals(signals, bkg_hist, kernel, base_dir, kernel_name=""):
         plt.close("all")
 
 
+class LargeFeatureExtractor(torch.nn.Sequential):
+    def __init__(self):
+        super(LargeFeatureExtractor, self).__init__()
+        self.add_module("linear1", torch.nn.Linear(2, 64))
+        self.add_module("relu1", torch.nn.ReLU())
+        self.add_module("linear2", torch.nn.Linear(64, 32))
+        self.add_module("relu2", torch.nn.ReLU())
+        self.add_module("linear4", torch.nn.Linear(32, 2))
+
+
+def func(x):
+    return x - torch.tensor([0.4, 0.4], device=x.device)
+
+
 def main():
 
     with open(
         "regression_results/2018_Signal312_nn_uncomp_0p67_m14_vs_mChiUncompRatio.pkl",
         "rb",
     ) as f:
-        results = pkl.load(f)
+        signal312 = pkl.load(f)
 
-    print(results.keys())
+    with open(
+        "regression_results/2018_Control_nn_uncomp_0p67_m14_vs_mChiUncompRatio.pkl",
+        "rb",
+    ) as f:
+        control = pkl.load(f)
 
-    bkg_hist = results["QCDInclusive2018", "Signal312"]["hist_collection"]["histogram"][
-        "central", ...
-    ]
-    print(bkg_hist)
-
-    # hists = res.getMergedHistograms(sample_manager)
-    # sig_hists = sig.getMergedHistograms(sample_manager)
-
-    # complete_hist = hists["ratio_m14_vs_m24"]["QCDInclusive2018"]
-    # signal_hists_complete = sig_hists["ratio_m14_vs_m24"]
-    # orig = complete_hist[
-    #     ..., hist.loc(1150) : hist.loc(3000), hist.loc(0.4) : hist.loc(1)
-    # ]
-    # narrowed = orig[..., :: hist.rebin(2), :: hist.rebin(2)]
-    # qcd_hist = narrowed
-    # # qcd_hist = narrowed[bkg_name, ...] * 0.09764933859427383
-
+    bkg_hist = control["Data2018", "Control"]["hist_collection"][
+        "histogram"
+    ]  # [hist.loc(1000) :, hist.loc(0.4) :]
     signal_hist_names = [
         "signal_312_1500_600",
         "signal_312_1500_900",
         "signal_312_2000_900",
     ]
     signals_to_scan = [
-        (sn, results[sn, "Signal312"]["hist_collection"]["histogram"]["central", ...])
+        (sn, signal312[sn, "Signal312"]["hist_collection"]["histogram"]["central", ...])
         for sn in signal_hist_names
     ]
-    # signals_to_scan.append((None, None))
-
-    # nnrbf256 = SK(models.NNRBFKernel(odim=2, layer_sizes=(256, 128, 16)))
-    # nnrbf1024 = SK(models.NNRBFKernel(odim=2, layer_sizes=(1024, 1024, 16)))
-    # nnrbf32 = SK(models.NNRBFKernel(odim=2, layer_sizes=(32, 16)))
-    # nnrbf32_16_8 = SK(models.NNRBFKernel(odim=2, layer_sizes=(32, 16, 8)))
-
-    # nnrbf_1000_500_50 = SK(models.NNRBFKernel(odim=1, layer_sizes=(1000, 500, 50)))
-
-    # nnrbf16 = SK(models.NNRBFKernel(odim=2, layer_sizes=(16, 8)))
-
-    # nnrq256 = SK(models.NNRQKernel(odim=2, layer_sizes=(256, 128, 16)))
-    # nnrq32 = SK(models.NNRQKernel(odim=2, layer_sizes=(32, 16)))
-
-    # nnsmk_8_8 = models.NNSMKernel(odim=2, layer_sizes=(8, 8), num_mixtures=4)
-    # nnsmk_32_16_8 = models.NNSMKernel(odim=2, layer_sizes=(32, 16, 8), num_mixtures=4)
-
-    # shape = (256, 128, 64, 32, 16)
-    # nnrbf_deep = SK(models.NNRBFKernel(odim=2, layer_sizes=shape))
-    # nnrbf_huge = SK(models.NNRBFKernel(odim=2, layer_sizes=(1000, 500, 10)))
-
-    # nngrbf = SK(models.NNGRBFKernel(odim=2, layer_sizes=(32, 16, 4)))
-
-    # nnsmk_tiny = models.NNSMKernel(odim=2, layer_sizes=(500, 250, 50), num_mixtures=4)
-
-    # grq = SK(models.GeneralRQ(ard_num_dims=2))
 
     rbf = SK(gpytorch.kernels.RBFKernel(ard_num_dims=2))
 
@@ -491,10 +534,11 @@ def main():
     # smk = gpytorch.kernels.SpectralMixtureKernel(num_mixtures=12, ard_num_dims=2)
 
     kernels = {
-        #"rbf": rbf,
+        # "rbf": rbf,
         # "smk": smk,
         # "grq": grq,
-        # "grbf": grbf,
+        # "grbf": grbf ,
+        # "grbf3": grbf + grbf + grbf,
         # "nngrf" : nngrbf,
         # "nnsmk_tiny": nnsmk_tiny,
         # "nnrbf_deep": nnrbf_deep,
@@ -502,13 +546,18 @@ def main():
         # "nnrbf_tiny": nnrbf_tiny,
         # "nnrbf_32_16_8": nnrbf32_16_8,
         # "nnrbf_32_32_8": SK(models.NNRBFKernel(odim=2, layer_sizes=(32, 32, 8))),
-        # "nnrbf_256_64_16": SK(models.NNRBFKernel(odim=2, layer_sizes=(256, 64, 16))),
-        # "nnrbf_64_32_16": SK(models.NNRBFKernel(odim=2, layer_sizes=(64, 32, 16))),
-        # "nnrbf_64_8": SK(models.NNRBFKernel(odim=2, layer_sizes=(64, 8))),
-        "nnrbf_32_8": SK(models.NNRBFKernel(odim=2, layer_sizes=(32, 8))),
+        # "nnrbf_500_500_50": SK(models.NNRBFKernel(odim=2, layer_sizes=(500, 500, 50))),
+        # "nnrbf": SK(models.NNRBFKernel(odim=2,nn=LargeFeatureExtractor())),
+        "nnrbf_64_32_16": SK(models.NNRBFKernel(odim=2, layer_sizes=(64, 32, 16))),
+        # "nnrbf_64_32": SK(
+        #     models.NNRBFKernel(odim=4, layer_sizes=(64, 32))
+        # ),
+        # "nnrbf_32_4": SK(models.NNRBFKernel(odim=2, layer_sizes=(32, 4))),
+        # "nnrbf_4": SK(models.NNRBFKernel(odim=2, layer_sizes=(4,))),
+        # "testf": SK(models.FunctionRBF(func, ard_num_dims=2)),
     }
 
-    p = Path("allscans/uncompnn/")
+    p = Path("allscans/control/inuc2/")
     for n, k in kernels.items():
         print(n)
         doEstimationForSignals(signals_to_scan, bkg_hist, k, p / n, kernel_name=n)

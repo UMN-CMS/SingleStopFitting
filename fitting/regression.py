@@ -62,7 +62,6 @@ def makeRegressionData(
             centers_grid[:, :, 0], centers_grid[:, :, 1]
         )
 
-    print(domain_mask)
 
     m = mask_function(centers_grid[:, :, 0], centers_grid[:, :, 1])
     centers_mask = m | domain_mask
@@ -119,15 +118,22 @@ def optimizeHyperparams(
     likelihood.train()
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
     if mll is None:
-        #mll = gpytorch.mlls.ExactMarginalLogLikelihood(likelihood, model)
-        mll = gpytorch.mlls.LeaveOneOutPseudoLikelihood(likelihood, model)
+        mll = gpytorch.mlls.ExactMarginalLogLikelihood(likelihood, model)
+        # mll = gpytorch.mlls.LeaveOneOutPseudoLikelihood(likelihood, model)
 
 
     print(f"step_size={iterations//3}")
     scheduler = torch.optim.lr_scheduler.StepLR(
         optimizer, step_size=iterations // 3, gamma=0.1
     )
-    #scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, "min")
+    # scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, "min")
+    # scheduler = torch.optim.lr_scheduler.CyclicLR(
+    #     optimizer, 0.1, 0.001, step_size_up=100,
+    # )
+    # scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(optimizer, 100,)
+    # scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, 0.99)
+
+
 
     context = Progress() if bar else contextlib.nullcontext()
     evidence = None
@@ -142,7 +148,7 @@ def optimizeHyperparams(
 
             loss.backward()
             optimizer.step()
-            #scheduler.step(loss)
+            # scheduler.step(loss)
             scheduler.step()
 
             # slr = get_lr(optimizer)
@@ -163,7 +169,7 @@ def optimizeHyperparams(
                 progress.refresh()
             else:
                 if (i % (iterations // 10) == 0) or i == iterations - 1:
-                    print(f"Iter {i} (lr={slr}): Loss = {round(loss.item(),4)}")
+                    print(f"Iter {i} (lr={slr:0.2f}): Loss = {round(loss.item(),4)}")
                     evidence = float(loss.item())
                     pass
 

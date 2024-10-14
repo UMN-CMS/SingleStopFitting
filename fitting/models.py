@@ -5,6 +5,7 @@ import gpytorch
 import torch
 from gpytorch.variational import CholeskyVariationalDistribution, VariationalStrategy
 
+
 class GaussianMean(gpytorch.means.Mean):
     def __init__(self, prior=None, init_mean=0.0, init_sigma=1.0, init_scale=1.0):
         super().__init__()
@@ -110,6 +111,27 @@ class GeneralRQ(RotMixin, gpytorch.kernels.RQKernel):
 class GeneralRBF(RotMixin, gpytorch.kernels.RBFKernel):
     def post_function(self, dist_mat):
         return gpytorch.kernels.rbf_kernel.postprocess_rbf(dist_mat)
+
+
+class FunctionRBF(GeneralRBF):
+    is_stationary = False
+
+    def __init__(self, function, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.function = function
+
+    def forward(self, x1, x2, **params):
+        ret = torch.einsum(
+            "ik,jk->ij",
+            self.function(x1),
+            self.function(x2),
+        )
+        print(ret.size())
+        f=  super().forward(x1, x2)
+        print(f.size())
+        ret = ret * f
+        print(f)
+        return ret
 
 
 class GeneralMatern(RotMixin, gpytorch.kernels.MaternKernel):
@@ -259,10 +281,6 @@ class ExactAnyKernelModel(gpytorch.models.ExactGP):
         super().__init__(train_x, train_y, likelihood)
         # self.mean_module = gpytorch.means.ConstantMean()
         self.mean_module = mean or gpytorch.means.ConstantMean()
-        if kernel is None:
-            kernel = gpytorch.kernels.ScaleKernel(
-                gpytorch.kernels.RBFKernel(ard_num_dims=2)
-            )
         self.covar_module = kernel
 
     def forward(self, x):
@@ -270,8 +288,6 @@ class ExactAnyKernelModel(gpytorch.models.ExactGP):
         covar_x = self.covar_module(x)
 
         return gpytorch.distributions.MultivariateNormal(mean_x, covar_x)
-
-
 
 
 class VariationalAnyKernelModel(gpytorch.models.ApproximateGP):
@@ -382,14 +398,19 @@ class LargeFeatureExtractor(torch.nn.Sequential):
 
 
 def wrapNN(cls_name, kernel):
-    def __init__(self, *args, odim=None, idim=None, layer_sizes=None, **kwargs):
+    def __init__(
+        self, *args, odim=None, idim=None, layer_sizes=None, nn=None, **kwargs
+    ):
         kernel.__init__(self, *args, **kwargs, ard_num_dims=odim)
-        nnargs = dict(
-            x
-            for x in (("odim", odim), ("idim", idim), ("layer_sizes", layer_sizes))
-            if x[1] is not None
-        )
-        self.feature_extractor = LargeFeatureExtractor(**nnargs)
+        if nn:
+            self.feature_extractor = nn
+        else:
+            nnargs = dict(
+                x
+                for x in (("odim", odim), ("idim", idim), ("layer_sizes", layer_sizes))
+                if x[1] is not None
+            )
+            self.feature_extractor = LargeFeatureExtractor(**nnargs)
         self.scale_to_bounds = gpytorch.utils.grid.ScaleToBounds(-1.0, 1.0)
 
     def forward(self, x1, x2, **params):
@@ -496,4 +517,3 @@ class PyroGPModel(gpytorch.models.PyroGP):
 NNRBFKernel = wrapNN("NNRBFKernel", gpytorch.kernels.RBFKernel)
 NNGRBFKernel = wrapNN("NNGRBFKernel", GeneralRBF)
 NNRQKernel = wrapNN("NNRQKernel", gpytorch.kernels.RQKernel)
-NNSMKernel = wrapNN("NNSMKernel", gpytorch.kernels.SpectralMixtureKernel)
