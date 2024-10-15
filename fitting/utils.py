@@ -2,6 +2,12 @@ import linear_operator
 import torch
 
 
+def chi2Bins(obs,exp,var, mask=None):
+    if mask is not None:
+        obs,exp,var = obs[mask],exp[mask],var[mask]
+    return torch.sum((obs-exp).pow(2) / var) / obs.size(0)
+
+
 def fixMVN(mvn):
     X = linear_operator.utils.cholesky.psd_safe_cholesky(mvn.covariance_matrix)
     fixed_cv = X @ X.T

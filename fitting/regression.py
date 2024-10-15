@@ -1,4 +1,5 @@
 import contextlib
+import copy
 from collections import namedtuple
 from dataclasses import dataclass
 
@@ -8,6 +9,7 @@ from rich import print
 from rich.progress import Progress
 
 from .models import ExactAnyKernelModel
+from .utils import chi2Bins
 
 DataValues = namedtuple("DataValues", "X Y V E")
 
@@ -34,9 +36,7 @@ def makeRegressionData(
     domain_mask_function=None,
 ):
     if mask_function is None:
-        mask_function = lambda x1, x2: (
-            torch.full_like(x1, False, dtype=torch.bool)
-        )
+        mask_function = lambda x1, x2: (torch.full_like(x1, False, dtype=torch.bool))
 
     edges_x1 = torch.from_numpy(histogram.axes[0].edges)
     edges_x2 = torch.from_numpy(histogram.axes[1].edges)
@@ -54,14 +54,12 @@ def makeRegressionData(
     else:
         domain_mask = torch.full_like(bin_values, False, dtype=torch.bool)
 
-
     centers_grid = torch.stack((centers_grid_x1, centers_grid_x2), axis=2)
 
     if domain_mask_function is not None:
         domain_mask = domain_mask | domain_mask_function(
             centers_grid[:, :, 0], centers_grid[:, :, 1]
         )
-
 
     m = mask_function(centers_grid[:, :, 0], centers_grid[:, :, 1])
     centers_mask = m | domain_mask
@@ -113,6 +111,8 @@ def optimizeHyperparams(
     lr=0.05,
     get_evidence=False,
     mll=None,
+    chi2mask=None,
+    val=None
 ):
     model.train()
     likelihood.train()
@@ -121,11 +121,11 @@ def optimizeHyperparams(
         mll = gpytorch.mlls.ExactMarginalLogLikelihood(likelihood, model)
         # mll = gpytorch.mlls.LeaveOneOutPseudoLikelihood(likelihood, model)
 
-
+    print(train_data.V)
     print(f"step_size={iterations//3}")
-    scheduler = torch.optim.lr_scheduler.StepLR(
-        optimizer, step_size=iterations // 3, gamma=0.1
-    )
+    # scheduler = torch.optim.lr_scheduler.StepLR(
+    #     optimizer, step_size=iterations // 3, gamma=0.1
+    # )
     # scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, "min")
     # scheduler = torch.optim.lr_scheduler.CyclicLR(
     #     optimizer, 0.1, 0.001, step_size_up=100,
@@ -133,11 +133,17 @@ def optimizeHyperparams(
     # scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(optimizer, 100,)
     # scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, 0.99)
 
-
-
     context = Progress() if bar else contextlib.nullcontext()
     evidence = None
 
+
+    k = torch.kthvalue(train_data.Y, int(train_data.Y.size(0) * 0.1)).values
+    m = train_data.Y > k
+    print(torch.count_nonzero(m))
+
+    
+
+    slr = lr
     with context as progress:
         if bar:
             task1 = progress.add_task("[red]Optimizing...", total=iterations)
@@ -146,13 +152,11 @@ def optimizeHyperparams(
             output = model(train_data.X)
             loss = -mll(output, train_data.Y)
 
-            loss.backward()
-            optimizer.step()
             # scheduler.step(loss)
-            scheduler.step()
+            # scheduler.step()
 
             # slr = get_lr(optimizer)
-            slr = scheduler.get_last_lr()[0]
+            # slr = scheduler.get_last_lr()[0]
 
             # if slr < 1e-3 * lr:
             #    print(
@@ -169,9 +173,29 @@ def optimizeHyperparams(
                 progress.refresh()
             else:
                 if (i % (iterations // 10) == 0) or i == iterations - 1:
-                    print(f"Iter {i} (lr={slr:0.2f}): Loss = {round(loss.item(),4)}")
+                    model.eval()
+                    output = model(train_data.X)
+                    if val is not None:
+                        v = val(model)
+                    model.train()
+                    chi2 = chi2Bins(output.mean, train_data.Y, train_data.V,mask=chi2mask).item()
+                    chi2_p = chi2Bins(
+                        output.mean, train_data.Y, output.variance
+                    ).item()
+                    s = (
+                        f"Iter {i} (lr={slr:0.2f}): MLL={round(loss.item(),4)},"
+                        f"X2/B={chi2:0.2f}, "
+                        f"X2P/B={chi2_p:0.2f}"
+                    )
+                    if val is not None:
+                        s += f" Val={v}"
+                    print(s)
+
+
                     evidence = float(loss.item())
                     pass
+            loss.backward()
+            optimizer.step()
 
     if get_evidence:
         return model, likelihood, evidence
@@ -180,9 +204,7 @@ def optimizeHyperparams(
 
 
 def getPrediction(model, likelihood, test_data):
-    model.eval()
-    likelihood.eval()
-    with torch.no_grad(), gpytorch.settings.fast_pred_var():
+    with torch.no_grad():
         observed_pred = model(test_data.X)
     return observed_pred
 
