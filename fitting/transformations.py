@@ -108,9 +108,12 @@ def getNormalizationTransform(dv, scale=1.0) -> DataTransformation:
     # print(f"Std is: {std_y}")
     # input_scale = max_x - min_x
 
-    transform_x = LinearTransform(scale * (max_x - min_x), min_x)
+    transform_x = LinearTransform(scale * (max_x - min_x), torch.tensor([0.0,0.0]))
     # transform_y = LinearTransform(scale * (max_y - min_y), min_y)
     transform_y = LinearTransform(scale * std_y, mean_y)
+    print(transform_x)
+    print(transform_y)
+
     #transform_y = LinearTransform(torch.tensor([1.0]), torch.tensor([1.0]))
     # transform_y = LinearTransform(scale * value_scale, min_y)
 

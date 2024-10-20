@@ -16,6 +16,9 @@ import hist
 import linear_operator
 import matplotlib as mpl
 import matplotlib.pyplot as plt
+import pyro
+import pyro.distributions as pyrod
+import pyro.infer as pyroi
 import torch
 import uhi
 from gpytorch.kernels import ScaleKernel as SK
@@ -27,47 +30,34 @@ from .plot_tools import createSlices, getPolyFromSquares, makeSquares, simpleGri
 from .utils import chi2Bins
 
 torch.set_default_dtype(torch.float64)
+torch.manual_seed(12345)
+random.seed(12345)
+np.random.seed(12345)
+# torch.use_deterministic_algorithms(True)
 
 
 logger = logging.getLogger(__name__)
 
 
-# class LargeFeatureExtractor(torch.nn.Sequential):
-#     def __init__(self):
-#         super(LargeFeatureExtractor, self).__init__()
-#         self.add_module("linear1", torch.nn.Linear(2, 32))
-#         self.add_module("relu1", torch.nn.ReLU())
-#         self.add_module("linear2", torch.nn.Linear(32, 16))
-#         self.add_module("relu2", torch.nn.ReLU())
-#         self.add_module("linear3", torch.nn.Linear(16, 8))
-#         self.add_module("relu3", torch.nn.ReLU())
-#         self.add_module("linear4", torch.nn.Linear(8, 2))
+class GPRegressionModel(gpytorch.models.ExactGP):
+    def __init__(self, train_x, train_y, likelihood, feature_extractor):
+        super(GPRegressionModel, self).__init__(train_x, train_y, likelihood)
+        self.mean_module = gpytorch.means.ConstantMean()
+        self.covar_module = gpytorch.kernels.InducingPointKernel(
+            gpytorch.kernels.ScaleKernel(gpytorch.kernels.RBFKernel(ard_num_dims=2)),
+            likelihood=likelihood,
+            inducing_points=train_x[::2].clone(),
+        )
 
+        self.feature_extractor = feature_extractor
+        self.scale_to_bounds = gpytorch.utils.grid.ScaleToBounds(-1.0, 1.0)
 
-# ft = LargeFeatureExtractor()
-
-
-# class GPRegressionModel(gpytorch.models.ExactGP):
-#     def __init__(self, train_x, train_y, likelihood):
-#         super(GPRegressionModel, self).__init__(train_x, train_y, likelihood)
-#         self.mean_module = gpytorch.means.ConstantMean()
-#         self.covar_module = gpytorch.kernels.InducingPointKernel(
-#             gpytorch.kernels.ScaleKernel(
-#                 gpytorch.kernels.RBFKernel(ard_num_dims=2)
-#             ),
-#             likelihood=likelihood,
-#             inducing_points=train_x[::2].clone(),
-#         )
-
-#         self.feature_extractor = ft
-#         self.scale_to_bounds = gpytorch.utils.grid.ScaleToBounds(-1.0, 1.0)
-
-#     def forward(self, x):
-#         projected_x = self.feature_extractor(x)
-#         projected_x = self.scale_to_bounds(projected_x)
-#         mean_x = self.mean_module(projected_x)
-#         covar_x = self.covar_module(projected_x)
-#         return gpytorch.distributions.MultivariateNormal(mean_x, covar_x)
+    def forward(self, x):
+        projected_x = self.feature_extractor(x)
+        projected_x = self.scale_to_bounds(projected_x)
+        mean_x = self.mean_module(projected_x)
+        covar_x = self.covar_module(projected_x)
+        return gpytorch.distributions.MultivariateNormal(mean_x, covar_x)
 
 
 @dataclass
@@ -231,7 +221,7 @@ def makeDiagnosticPlots(pred, raw_test, raw_train, mask=None, inducing_points=No
     Y = torch.exp(g.log_prob(X))
     ax.plot(X, Y)
 
-    ax.set_xlabel(r"$\frac{N_{obs}-N_{pred}}{\sigma_{p}}$")
+    ax.set_xlabel(r"$\frac{N_{obs}-N_{pred}}{\sigma_{o}}$")
     ax.set_ylabel("Count")
     ret["global_pulls_hist"] = (fig, ax)
 
@@ -243,11 +233,126 @@ def makeDiagnosticPlots(pred, raw_test, raw_train, mask=None, inducing_points=No
     Y = torch.exp(g.log_prob(X))
     ax.plot(X, Y)
 
-    ax.set_xlabel(r"$\frac{N_{obs}-N_{pred}}{\sigma_{p}}$")
+    ax.set_xlabel(r"$\frac{N_{obs}-N_{pred}}{\sigma_{o}}$")
     ax.set_ylabel("Count")
     ret["window_pulls_hist"] = (fig, ax)
 
     return ret
+
+
+def makeNNPlots(model, test_data):
+    ret = {}
+    fig, ax = plt.subplots(layout="tight")
+    # fe = model.covar_module.base_kernel.base_kernel.feature_extractor
+    fe = model.feature_extractor
+    T = fe(test_data.X).detach()
+    fig, ax = plt.subplots()
+    ax.scatter(T[:, 0], T[:, 1], c=test_data.Y, cmap="hsv")
+    ret["NN"] = (fig, ax)
+    return ret
+
+
+def summary(samples):
+    site_stats = {}
+    for k, v in samples.items():
+        site_stats[k] = {
+            "mean": torch.mean(v, 0),
+            "std": torch.std(v, 0),
+            "16%": v.kthvalue(int(len(v) * 0.16), dim=0)[0],
+            "84%": v.kthvalue(int(len(v) * 0.84), dim=0)[0],
+        }
+    return site_stats
+
+
+def makePosteriorPred(bkg_mvn, test_data):
+    ret = {}
+
+    def statModel(observed=None):
+        background = pyro.sample("background", bkg_mvn)
+        with pyro.plate("bins", bkg_mvn.mean.shape[0]):
+            return pyro.sample(
+                "observed", pyrod.Poisson(torch.clamp(background, 0)), obs=observed
+            )
+
+
+    predictive = pyroi.Predictive(
+        statModel,
+        num_samples=800,
+    )
+    pred = predictive()
+    summ = summary(pred)
+
+    stat_pulls = (bkg_mvn.mean - test_data.Y) / torch.sqrt(test_data.V)
+    post_pulls = (bkg_mvn.mean - test_data.Y) / summ["observed"]["std"]
+
+    fig, ax = plt.subplots(layout="tight")
+    ax.set_title("Relative Uncertainty In Pred")
+    f = simpleGrid(
+        ax,
+        test_data.E,
+        test_data.X,
+        torch.sqrt((bkg_mvn.variance)) / bkg_mvn.mean,
+    )
+    f.set_clim(0, 1)
+    ret["post_relative_uncertainty"] = (fig, ax)
+
+    fig, ax = plt.subplots(layout="tight")
+    f = simpleGrid(
+        ax,
+        test_data.E,
+        test_data.X,
+        stat_pulls,
+        cmap="coolwarm",
+    )
+    f.set_clim(-2.5, 2.5)
+    ax.set_title("Pull Statistical")
+    ret["post_pull_statistical"] = (fig, ax)
+
+    fig, ax = plt.subplots(layout="tight")
+    f = simpleGrid(
+        ax,
+        test_data.E,
+        test_data.X,
+        post_pulls,
+        cmap="coolwarm",
+    )
+    f.set_clim(-2, 2)
+    ax.set_title("Pull Posterior")
+    ret["post_pull_posterior"] = (fig, ax)
+
+    fig, ax = plt.subplots(layout="tight")
+    f = simpleGrid(
+        ax,
+        test_data.E,
+        test_data.X,
+        stat_pulls - post_pulls,
+        cmap="coolwarm",
+    )
+    ax.set_title("Pull Stat - Pull Posterior")
+
+    ret["post_pull_diff"] = (fig, ax)
+    f.set_clim(-5, 5)
+
+
+    fig, ax = plt.subplots(layout="tight")
+    p = post_pulls
+    ax.hist(p, bins=np.linspace(-5.0, 5.0, 21), density=True)
+    X = torch.linspace(-5, 5, 100)
+    g = torch.distributions.Normal(0, 1)
+    Y = torch.exp(g.log_prob(X))
+    ax.plot(X, Y)
+    ax.set_xlabel(r"$\frac{N_{obs}-N_{pred}}{\sigma_{post}}$")
+    ax.set_ylabel("Count")
+    ret["global_pred_pulls_hist"] = (fig, ax)
+
+
+    global_chi2_pred = chi2Bins(
+                bkg_mvn.mean, test_data.Y, summ["observed"]["std"]
+            )
+
+    data = {"chi2_pred" : float(global_chi2_pred)}
+
+    return ret,data
 
 
 def makeSlicePlots(pred, test_data, hist, window, dim, save_dir):
@@ -285,6 +390,7 @@ def makeSlicePlots(pred, test_data, hist, window, dim, save_dir):
 
 def bumpCut(X, Y):
     m = Y > (1 - 200 / X)
+    print(m.size())
     return m
 
 
@@ -318,22 +424,48 @@ def doCompleteRegression(
     kernel=None,
     model_maker=None,
     save_dir="plots",
+    mean=None,
+    just_model=False,
 ):
 
     min_counts = 50
-    train_data = regression.makeRegressionData(
-        inhist, window_func, domain_mask_function=bumpCut, exclude_less=min_counts
+    train_data, window_mask,*_ = regression.makeRegressionData(
+        inhist, window_func, domain_mask_function=bumpCut, exclude_less=min_counts, get_mask=True
     )
-    test_data, domain_mask = regression.makeRegressionData(
+    test_data, domain_mask, shaped_mask = regression.makeRegressionData(
         inhist,
         None,
         get_mask=True,
+        get_shaped_mask=True,
         domain_mask_function=bumpCut,
         exclude_less=min_counts,
     )
-    train_transform = transformations.getNormalizationTransform(train_data)
+    s = 1.0
+    train_transform = transformations.getNormalizationTransform(train_data, scale=s)
     normalized_train_data = train_transform.transform(train_data)
     normalized_test_data = train_transform.transform(test_data)
+    if mean:
+        mean_data,*_ = regression.makeRegressionData(mean, None)
+        test_mean_data = regression.DataValues(
+            mean_data.X[domain_mask],
+            mean_data.Y[domain_mask],
+            mean_data.V[domain_mask],
+            mean_data.E
+        )
+        train_mean_data = regression.DataValues(
+            mean_data.X[window_mask],
+            mean_data.Y[window_mask],
+            mean_data.V[window_mask],
+            mean_data.E
+        )
+        print(mean_data)
+        mean_transform = transformations.getNormalizationTransform(train_mean_data)
+        normalized_test_mean_data = train_transform.transform(test_mean_data)
+        normalized_train_mean_data = train_transform.transform(train_mean_data)
+
+        normalized_train_data.Y = normalized_train_data.Y - normalized_train_mean_data.Y
+        normalized_test_data.Y = normalized_test_data.Y - normalized_test_mean_data.Y
+
 
     use_cuda = True
     if torch.cuda.is_available() and use_cuda:
@@ -344,11 +476,15 @@ def doCompleteRegression(
         train = normalized_train_data
         norm_test = normalized_test_data
 
-    lr = 0.01
+    #lr = 0.05 * s
+    lr = 0.025
     ok = False
     while not ok:
         model, likelihood = regression.createModel(
-            train, kernel=kernel, model_maker=model_maker, learn_noise=False
+            train,
+            kernel=kernel,
+            model_maker=model_maker,
+            learn_noise=False,
         )
 
         # likelihood = gpytorch.likelihoods.FixedNoiseGaussianLikelihood(
@@ -356,12 +492,14 @@ def doCompleteRegression(
         #     learn_additional_noise=False,
         # )
         # model = GPRegressionModel(train.X, train.Y, likelihood)
-        print(model)
-
 
         if torch.cuda.is_available() and use_cuda:
             model = model.cuda()
             likelihood = likelihood.cuda()
+
+        print(model)
+        for n,p in model.named_parameters():
+            print(n,p)
 
         if hasattr(model.covar_module, "initialize_from_data"):
             model.covar_module.initialize_from_data(train.X, train.Y)
@@ -370,12 +508,17 @@ def doCompleteRegression(
             X = normalized_test_data.X.cuda()
             Y = normalized_test_data.Y.cuda()
             V = normalized_test_data.V.cuda()
-            mask = regression.getBlindedMask(test_data.X, None, None, None, window_func)
+            if window_func is not None:
+                mask = regression.getBlindedMask(
+                    test_data.X, None, None, None, window_func
+                )
+            else:
+                mask = torch.ones_like(test_data.Y, dtype=bool)
             mask = mask.cuda()
             output = model(X)
             bpred_mean = output.mean
             chi2 = chi2Bins(Y, bpred_mean, V, mask)
-            #chi2 = chi2Bins(Y, bpred_mean, output.variance, mask)
+            # chi2 = chi2Bins(Y, bpred_mean, output.variance, mask)
             return chi2
 
         try:
@@ -384,7 +527,7 @@ def doCompleteRegression(
                 likelihood,
                 train,
                 bar=False,
-                iterations=1600,
+                iterations=800,
                 lr=lr,
                 get_evidence=True,
                 chi2mask=train_data.Y > min_counts,
@@ -404,7 +547,7 @@ def doCompleteRegression(
 
             raw_pred_dist = makePredModel(model, likelihood, normalized_train_data)
             pred_dist = makePredModel(
-                model, likelihood, normalized_train_data, slope, intercept
+                model, likelihood, normalized_test_data, slope, intercept
             )
 
             train_pred_data = makePredData(
@@ -441,8 +584,6 @@ def doCompleteRegression(
                 train.V.cpu(),
                 good_bin_mask,
             ).item()
-            print(normalized_train_data.V)
-            print(normalized_train_pred_data.V)
             print(f"Global Chi2/bins = {global_chi2_bins}")
             print(f"Unblinded Chi2/bins = {blinded_chi2_bins}")
             print(f"Normed Global Chi2/bins = {global_normed_chi2_bins}")
@@ -462,6 +603,8 @@ def doCompleteRegression(
             lr = lr + random.random() / 1000
             logger.warning(f"CHOLESKY FAILED: retrying with lr={round(lr,3)}")
             logger.warning(e)
+            raise
+
 
     data = {
         "evidence": float(evidence),
@@ -502,6 +645,15 @@ def doCompleteRegression(
         diagnostic_plots = makeDiagnosticPlots(
             test_pred_data, test_data, train_data, mask
         )
+        p,d = makePosteriorPred(pred_dist, test_data)
+        diagnostic_plots.update(p)
+        data.update(d)
+        if (
+                False and
+            hasattr(model.covar_module.base_kernel.base_kernel, "feature_extractor")
+        ):
+            print("Saving NN")
+            diagnostic_plots.update(makeNNPlots(model, test_data))
         saveDiagnosticPlots(diagnostic_plots, save_dir)
         # makeSlicePlots(pred_data, test_data, inhist, window_func, 0, save_dir)
         # makeSlicePlots(pred_data, test_data, inhist, window_func, 1, save_dir)
@@ -523,31 +675,53 @@ def doCompleteRegression(
     torch.save(pred_dist, save_dir / "posterior_latent.pth")
     with open(save_dir / "info.json", "w") as f:
         json.dump(data, f)
-    return save_data
+    if just_model:
+        return model
+    else:
+        return save_data
 
 
-def createWindowForSignal(signal_data, axes=(200, 0.06)):
+def createWindowForSignal(signal_data, axes=(150, 0.05)):
     max_idx = torch.argmax(signal_data.Y)
     max_x = signal_data.X[max_idx].round(decimals=2)
     return windowing.EllipseWindow(max_x.tolist(), list(axes))
 
 
+class LargeFeatureExtractor(torch.nn.Sequential):
+    def __init__(self):
+        super(LargeFeatureExtractor, self).__init__()
+        self.add_module("linear1", torch.nn.Linear(2, 2, bias=False))
+        # self.add_module("relu1", torch.nn.ReLU())
+        # self.add_module("linear2", torch.nn.Linear(32, 16))
+        # self.add_module("relu2", torch.nn.ReLU())
+        # self.add_module("linear3", torch.nn.Linear(16, 8))
+        # self.add_module("relu3", torch.nn.ReLU())
+        # self.add_module("linear4", torch.nn.Linear(8, 2))
+
+
 def doRegressionForSignal(
-    signal_name, signal_hist, bkg_hist, kernel, base_dir, kernel_name=""
+    signal_name, signal_hist, bkg_hist, kernel, base_dir, kernel_name="", mean=None
 ):
     logging.info(f"Signal is: {signal_name}")
 
     inducing_ratio = 2
 
     def mm(train_x, train_y, likelihood, kernel, **kwargs):
-        # return models.ExactAnyKernelModel(train_x, train_y, likelihood, kernel=kernel)
+        # return models.ExactAnyKernelModel(
+        #     train_x, train_y, likelihood, kernel=kernel, **kwargs
+        # )
         return models.InducingPointModel(
-            train_x, train_y, likelihood, kernel, inducing=train_x[::inducing_ratio]
+            train_x,
+            train_y,
+            likelihood,
+            kernel,
+            inducing=train_x[::inducing_ratio],
+            **kwargs,
         )
-        # return GPRegressionModel  # (train_x, train_y, likelihood)
+        # return GPRegressionModel(train_x, train_y, likelihood, LargeFeatureExtractor())
 
     if signal_hist:
-        signal_regression_data = regression.makeRegressionData(signal_hist)
+        signal_regression_data, *_ = regression.makeRegressionData(signal_hist)
         window = createWindowForSignal(signal_regression_data)
         sd = SignalData(signal_regression_data, None, signal_hist, signal_name)
     else:
@@ -569,7 +743,7 @@ def doRegressionForSignal(
     # dirdata.setGlobal(dir_data)
 
     d = doCompleteRegression(
-        bkg_hist, window, save_dir=path, model_maker=mm, kernel=kernel
+        bkg_hist, window, save_dir=path, model_maker=mm, kernel=kernel, mean=mean
     )
 
     # if signal_hist:
@@ -579,7 +753,9 @@ def doRegressionForSignal(
     #     saveDiagnosticPlots(r, dirdata.directory)
 
 
-def doEstimationForSignals(signals, bkg_hist, kernel, base_dir, kernel_name=""):
+def doEstimationForSignals(
+    signals, bkg_hist, kernel, base_dir, kernel_name="", mean=None
+):
     base_dir = Path(base_dir)
 
     i = 0
@@ -592,23 +768,18 @@ def doEstimationForSignals(signals, bkg_hist, kernel, base_dir, kernel_name=""):
             kernel,
             base_dir,
             kernel_name=kernel_name,
+            mean=mean,
         )
 
         plt.close("all")
 
 
-class LargeFeatureExtractor(torch.nn.Sequential):
-    def __init__(self):
-        super(LargeFeatureExtractor, self).__init__()
-        self.add_module("linear1", torch.nn.Linear(2, 64))
-        self.add_module("relu1", torch.nn.ReLU())
-        self.add_module("linear2", torch.nn.Linear(64, 32))
-        self.add_module("relu2", torch.nn.ReLU())
-        self.add_module("linear4", torch.nn.Linear(32, 2))
-
-
 def func(x):
     return x - torch.tensor([0.4, 0.4], device=x.device)
+
+
+
+
 
 
 def main():
@@ -625,13 +796,24 @@ def main():
     ) as f:
         control = pkl.load(f)
 
+    print(signal312.keys())
+
     bkg_hist = control["Data2018", "Control"]["hist_collection"][
         "histogram"
-    ]  # [hist.loc(1000) :, hist.loc(0.4) :]
+    ]#[hist.loc(1000) :, hist.loc(0.3) :]
+
+    mc_hist = control["QCDInclusive2018", "Control"]["hist_collection"]["histogram"][
+        "central", ...#hist.loc(1000) :, hist.loc(0.3): 
+    ]#["central", hist.loc(1000) :, hist.loc(0.3) :]
+
     signal_hist_names = [
+        "signal_312_1200_400",
+        "signal_312_1200_800",
+        "signal_312_1500_400",
         "signal_312_1500_600",
-        "signal_312_1500_900",
+        "signal_312_1500_1000",
         "signal_312_2000_900",
+        "signal_312_2000_1200",
     ]
     signals_to_scan = [
         (sn, signal312[sn, "Signal312"]["hist_collection"]["histogram"]["central", ...])
@@ -643,11 +825,11 @@ def main():
     grbf = SK(models.GeneralRBF(ard_num_dims=2))
     # gsmk = models.GeneralSpectralMixture(ard_num_dims=2, num_mixtures=4)
 
-    smk = gpytorch.kernels.SpectralMixtureKernel(num_mixtures=12, ard_num_dims=2)
+    smk = gpytorch.kernels.SpectralMixtureKernel(num_mixtures=8, ard_num_dims=2)
 
     kernels = {
-        #"rbf": rbf,
-        #"smk": smk,
+        # "rbf": rbf,
+        # "smk": smk,
         # "grq": grq,
         # "grbf": grbf ,
         # "grbf3": grbf + grbf + grbf,
@@ -657,25 +839,40 @@ def main():
         # "nnrbf_huge": nnrbf_huge,
         # "nnrbf_tiny": nnrbf_tiny,
         # "nnrbf_32_16_8": nnrbf32_16_8,
-        # "nnrbf_32_32_8": SK(models.NNRBFKernel(odim=2, layer_sizes=(32, 32, 8))),
+        # "nnrbf_32_16_8": SK(models.NNRBFKernel(odim=2, layer_sizes=(32, 16, 8))),
         # "nnrbf_500_500_50": SK(models.NNRBFKernel(odim=2, layer_sizes=(500, 500, 50))),
+        # "nnrbf_1000_500_50": SK(models.NNRBFKernel(odim=2, layer_sizes=(1000, 500, 50))),
         # "nnrbf": SK(models.NNRBFKernel(odim=2,nn=LargeFeatureExtractor())),
         # "nnrbf_64_16_8": SK(models.NNRBFKernel(odim=2, layer_sizes=(64, 16, 8))),
-        #"nnrbf_32_16": SK(models.NNRBFKernel(odim=2, layer_sizes=(32, 8))),
-        "nnrbf_16_16_8_8": SK(
-            models.NNRBFKernel(odim=2, layer_sizes=(16, 16, 8, 8))
-        ),
-        #"nnrbf_10_5": SK(models.NNRBFKernel(odim=2, layer_sizes=(10, 5)))
-        #"nnrq_10_5": SK(models.NNRQKernel(odim=2, layer_sizes=(10, 5)))
-        #k"nnm_10_5": SK(models.NNMaternKernel(odim=2, layer_sizes=(10, 5)))
+        # "nnrbf_32_8": SK(models.NNRBFKernel(odim=2, layer_sizes=(32, 8))),
+        # "nnrbf_16_16_8_8": SK(models.NNRBFKernel(odim=2, layer_sizes=(16, 16, 8, 8))),
+        # "nnrbf_10_5": SK(models.NNRBFKernel(odim=2, layer_sizes=(10, 5)))
+        #"nnrbf_10_7_5_3": SK(models.NNRBFKernel(odim=2, layer_sizes=(10,7, 5, 3))),
+        # "nnrq_10_5": SK(models.NNRQKernel(odim=2, layer_sizes=(10, 5)))
+        # "nnm_10_5": SK(models.NNMaternKernel(odim=2, layer_sizes=(10, 5)))
         # "nnrbf_4": SK(models.NNRBFKernel(odim=2, layer_sizes=(4,))),
         # "testf": SK(models.FunctionRBF(func, ard_num_dims=2)),
+        # "nonstat": models.NonStatKernel(ard_num_dims=2),
+         "mykernel": SK(models.NNRBFKernel(odim=2, layer_sizes=(20,5)))
+         # "mykernel": models.NNSMKernel(num_mixtures=4, odim=2, layer_sizes=(4,)),
     }
 
     p = Path("allscans/control/")
+    # d = doCompleteRegression(
+    #     mc_hist,
+    #     None,
+    #     kernel=rbf,
+    #     save_dir=p/"mc",
+    #     just_model=True,
+
+
+    #  )
+
+
     for n, k in kernels.items():
-        print(n)
-        doEstimationForSignals(signals_to_scan, bkg_hist, k, p / n, kernel_name=n)
+        doEstimationForSignals(
+            signals_to_scan, bkg_hist, k, p / n, kernel_name=n,# mean=mc_hist
+        )
 
 
 if __name__ == "__main__":

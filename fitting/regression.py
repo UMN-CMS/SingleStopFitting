@@ -33,7 +33,10 @@ def makeRegressionData(
     mask_function=None,
     exclude_less=None,
     get_mask=False,
+    get_shaped_mask=False,
     domain_mask_function=None,
+    get_window_mask=False,
+    get_reshape_function=False
 ):
     if mask_function is None:
         mask_function = lambda x1, x2: (torch.full_like(x1, False, dtype=torch.bool))
@@ -72,10 +75,12 @@ def makeRegressionData(
         flat_bin_vars[torch.flatten(~centers_mask)],
         (edges_x1, edges_x2),
     )
+    ret = (ret,)
     if get_mask:
-        return ret, torch.flatten(~centers_mask)
-    else:
-        return ret
+        ret = (*ret, torch.flatten(~centers_mask))
+    if get_shaped_mask:
+        ret = (*ret, centers_mask)
+    return ret
 
 
 def createModel(train_data, kernel=None, model_maker=None, learn_noise=False, **kwargs):
@@ -84,7 +89,9 @@ def createModel(train_data, kernel=None, model_maker=None, learn_noise=False, **
     likelihood = gpytorch.likelihoods.FixedNoiseGaussianLikelihood(
         noise=v,
         learn_additional_noise=learn_noise,
+        noise_constraint=gpytorch.constraints.GreaterThan(1e-10),
     )
+    # likelihood = gpytorch.likelihoods.GaussianLikelihood()
     if model_maker is None:
         model_maker = ExactAnyKernelModel
 
@@ -112,21 +119,20 @@ def optimizeHyperparams(
     get_evidence=False,
     mll=None,
     chi2mask=None,
-    val=None
+    val=None,
 ):
     model.train()
     likelihood.train()
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
+    # optimizer = torch.optim.LBFGS(model.parameters(), lr=lr)
     if mll is None:
         mll = gpytorch.mlls.ExactMarginalLogLikelihood(likelihood, model)
         # mll = gpytorch.mlls.LeaveOneOutPseudoLikelihood(likelihood, model)
 
-    print(train_data.V)
-    print(f"step_size={iterations//3}")
     # scheduler = torch.optim.lr_scheduler.StepLR(
     #     optimizer, step_size=iterations // 3, gamma=0.1
     # )
-    # scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, "min")
+    # scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, "min",)
     # scheduler = torch.optim.lr_scheduler.CyclicLR(
     #     optimizer, 0.1, 0.001, step_size_up=100,
     # )
@@ -136,25 +142,29 @@ def optimizeHyperparams(
     context = Progress() if bar else contextlib.nullcontext()
     evidence = None
 
-
     k = torch.kthvalue(train_data.Y, int(train_data.Y.size(0) * 0.1)).values
     m = train_data.Y > k
-    print(torch.count_nonzero(m))
-
-    
 
     slr = lr
     with context as progress:
         if bar:
             task1 = progress.add_task("[red]Optimizing...", total=iterations)
+        # def closure():
+        #     optimizer.zero_grad()
+        #     output = model(train_data.X)
+        #     ml = -mll(output, train_data.Y)
+        #     ml.backward()
+        #     return ml
         for i in range(iterations):
             optimizer.zero_grad()
+
             output = model(train_data.X)
-            loss = -mll(output, train_data.Y)
+            ml = -mll(output, train_data.Y)
+            loss = ml
+            # optimizer.step(closure)
 
-            # scheduler.step(loss)
             # scheduler.step()
-
+            # scheduler.step(loss)
             # slr = get_lr(optimizer)
             # slr = scheduler.get_last_lr()[0]
 
@@ -164,6 +174,7 @@ def optimizeHyperparams(
             #    )
             #    evidence = float(loss.item())
             #    break
+
             if bar:
                 progress.update(
                     task1,
@@ -172,25 +183,39 @@ def optimizeHyperparams(
                 )
                 progress.refresh()
             else:
-                if (i % (iterations // 10) == 0) or i == iterations - 1:
+                if (i % (iterations // 20) == 0) or i == iterations - 1:
                     model.eval()
-                    output = model(train_data.X)
                     if val is not None:
                         v = val(model)
+                    output = model(train_data.X)
                     model.train()
-                    chi2 = chi2Bins(output.mean, train_data.Y, train_data.V,mask=chi2mask).item()
-                    chi2_p = chi2Bins(
-                        output.mean, train_data.Y, output.variance
+                    chi2 = chi2Bins(
+                        output.mean, train_data.Y, train_data.V, mask=chi2mask
                     ).item()
+                    chi2_p = chi2Bins(output.mean, train_data.Y, output.variance).item()
                     s = (
-                        f"Iter {i} (lr={slr:0.2f}): MLL={round(loss.item(),4)},"
+                        f"Iter {i} (lr={slr:0.4f}): MLL={round(loss.item(),4)},"
                         f"X2/B={chi2:0.2f}, "
                         f"X2P/B={chi2_p:0.2f}"
                     )
                     if val is not None:
-                        s += f" Val={v}"
-                    print(s)
+                        s += f" Val={v:0.2f}"
+                    for n, p in model.named_parameters():
+                        x = p.round(decimals=2).tolist()
+                        if not isinstance(x, list) or len(x) < 4:
+                            print(f"{n} = {x}")
+                    ls = None
+                    if hasattr(model.covar_module.base_kernel, "lengthscale"):
+                        ls = model.covar_module.base_kernel.lengthscale
+                    elif hasattr(
+                        model.covar_module.base_kernel.base_kernel, "lengthscale"
+                    ):
+                        ls = model.covar_module.base_kernel.base_kernel.lengthscale
 
+                    if ls is not None:
+                        print(f"lengthscale = {ls.round(decimals=2).tolist()}")
+
+                    print(s)
 
                     evidence = float(loss.item())
                     pass

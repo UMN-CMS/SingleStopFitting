@@ -4,6 +4,7 @@ import sys
 import gpytorch
 import torch
 from gpytorch.variational import CholeskyVariationalDistribution, VariationalStrategy
+from rich import print
 
 
 class GaussianMean(gpytorch.means.Mean):
@@ -31,6 +32,30 @@ class GaussianMean(gpytorch.means.Mean):
         e = torch.exp(-inner)
         ret = self.scale * e
         return ret
+
+
+class KnownMean(gpytorch.means.Mean):
+    def __init__(self, vals):
+        super().__init__()
+        self.vals = torch.nn.Parameter(vals, requires_grad=False)
+        self.register_parameter(name="mean", parameter=self.vals)
+
+    def forward(self, x):
+        print(self.vals.shape)
+        print(x.shape)
+        # r= self.vals.expand(torch.broadcast_shapes(self.vals.shape, x.shape[:-1]))
+        # print(r.shape)
+        return self.vals
+
+
+class GPMean(gpytorch.means.Mean):
+    def __init__(self, gp):
+        super().__init__()
+        self.gp = gp
+
+    def forward(self, x):
+        self.gp.eval()
+        return self.gp(x)
 
 
 class HeterogenousConstantMean(gpytorch.means.Mean):
@@ -280,7 +305,9 @@ class ExactAnyKernelModel(gpytorch.models.ExactGP):
     def __init__(self, train_x, train_y, likelihood, kernel=None, mean=None):
         super().__init__(train_x, train_y, likelihood)
         # self.mean_module = gpytorch.means.ConstantMean()
-        self.mean_module = mean or gpytorch.means.ConstantMean()
+        if mean is None:
+            mean = gpytorch.means.ZeroMean()
+        self.mean_module = mean
         self.covar_module = kernel
 
     def forward(self, x):
@@ -432,9 +459,13 @@ def wrapNN(cls_name, kernel):
 
 
 class InducingPointModel(gpytorch.models.ExactGP):
-    def __init__(self, train_x, train_y, likelihood, kernel=None, inducing=None):
+    def __init__(
+        self, train_x, train_y, likelihood, kernel=None, inducing=None, mean=None
+    ):
         super().__init__(train_x, train_y, likelihood)
-        self.mean_module = gpytorch.means.ConstantMean()
+        if mean is None:
+            mean = gpytorch.means.ZeroMean()
+        self.mean_module = mean
         self.base_covar_module = kernel
         self.covar_module = gpytorch.kernels.InducingPointKernel(
             self.base_covar_module,
@@ -514,6 +545,7 @@ class PyroGPModel(gpytorch.models.PyroGP):
         return gpytorch.distributions.MultivariateNormal(mean, covar)
 
 
+NNSMKernel = wrapNN("NNSMKernel", gpytorch.kernels.SpectralMixtureKernel)
 NNRBFKernel = wrapNN("NNRBFKernel", gpytorch.kernels.RBFKernel)
 NNGRBFKernel = wrapNN("NNGRBFKernel", GeneralRBF)
 NNRQKernel = wrapNN("NNRQKernel", gpytorch.kernels.RQKernel)
@@ -523,37 +555,38 @@ NNMaternKernel = wrapNN("NNMaternKernel", gpytorch.kernels.MaternKernel)
 class RBFLayer(torch.nn.Module):
     def __init__(self, dim, count):
         super().__init__()
-        self.length_scales = torch.nn.Parameter(torch.ones(count))
-        self.centers = torch.nn.Parameter(torch.ones(count,dim))
+        self.length_scales = torch.nn.Parameter(torch.rand(count, 2)+0.01 )
+        self.centers = torch.nn.Parameter(torch.rand(count, dim))
 
     def forward(self, vals):
-        return torch.exp((torch.unsqueeze(vals,1) - self.centers).pow(2).sum(-1)/(2 * self.length_scales))
+        return torch.exp(
+            -((torch.unsqueeze(vals, 1) - self.centers)
+            / (2 * self.length_scales)).pow(2).sum(-1)
+        )
 
 
 class NonStatKernel(gpytorch.kernels.RBFKernel):
-    # the sinc kernel is stationary
     is_stationary = False
 
-    def __init__(self, dim=2, count=4, **kwargs):
+    def __init__(self, dim=2, count=3, **kwargs):
         super().__init__(**kwargs)
         self.pre_transform = RBFLayer(dim, count)
-        self.trans = torch.nn.Linear(count, 1)
-        # self.add_module("trans", self.trans)
-        # self.add_module("pre", self.pre_transform)
+        # self.pre_transform = Linear(dim, count)
+        self.trans = torch.nn.Linear(count, 1, bias=True)
 
-    # this is the kernel function
     def forward(self, x1, x2, diag=False, **params):
+        # for m,p in self.named_parameters():
+        #     print(f"{m} = {p}")
 
+        r = super().forward(x1, x2, diag=diag, **params)
         v1 = self.trans(self.pre_transform(x1))
         v2 = self.trans(self.pre_transform(x2))
-        r = super().forward(x1, x2, diag=diag, **params)
-
         if diag:
             o = torch.squeeze(v1 * v2)
         else:
             o = torch.outer(v1.squeeze(), v2.squeeze())
 
-        return o * r  # , **params)
+        return o * r
 
 
 class NonStatGP(gpytorch.models.ExactGP):
