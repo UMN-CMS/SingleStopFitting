@@ -243,8 +243,8 @@ def makeDiagnosticPlots(pred, raw_test, raw_train, mask=None, inducing_points=No
 def makeNNPlots(model, test_data):
     ret = {}
     fig, ax = plt.subplots(layout="tight")
-    # fe = model.covar_module.base_kernel.base_kernel.feature_extractor
-    fe = model.feature_extractor
+    fe = model.covar_module.base_kernel.base_kernel.feature_extractor
+    #fe = model.feature_extractor
     T = fe(test_data.X).detach()
     fig, ax = plt.subplots()
     ax.scatter(T[:, 0], T[:, 1], c=test_data.Y, cmap="hsv")
@@ -316,7 +316,7 @@ def makePosteriorPred(bkg_mvn, test_data):
         post_pulls,
         cmap="coolwarm",
     )
-    f.set_clim(-2, 2)
+    f.set_clim(-2.5, 2.5)
     ax.set_title("Pull Posterior")
     ret["post_pull_posterior"] = (fig, ax)
 
@@ -329,9 +329,8 @@ def makePosteriorPred(bkg_mvn, test_data):
         cmap="coolwarm",
     )
     ax.set_title("Pull Stat - Pull Posterior")
-
-    ret["post_pull_diff"] = (fig, ax)
     f.set_clim(-5, 5)
+    ret["post_pull_diff"] = (fig, ax)
 
 
     fig, ax = plt.subplots(layout="tight")
@@ -527,7 +526,7 @@ def doCompleteRegression(
                 likelihood,
                 train,
                 bar=False,
-                iterations=800,
+                iterations=1600,
                 lr=lr,
                 get_evidence=True,
                 chi2mask=train_data.Y > min_counts,
@@ -649,7 +648,6 @@ def doCompleteRegression(
         diagnostic_plots.update(p)
         data.update(d)
         if (
-                False and
             hasattr(model.covar_module.base_kernel.base_kernel, "feature_extractor")
         ):
             print("Saving NN")
@@ -681,7 +679,7 @@ def doCompleteRegression(
         return save_data
 
 
-def createWindowForSignal(signal_data, axes=(150, 0.05)):
+def createWindowForSignal(signal_data, axes=(150, 0.06)):
     max_idx = torch.argmax(signal_data.Y)
     max_x = signal_data.X[max_idx].round(decimals=2)
     return windowing.EllipseWindow(max_x.tolist(), list(axes))
@@ -800,10 +798,10 @@ def main():
 
     bkg_hist = control["Data2018", "Control"]["hist_collection"][
         "histogram"
-    ]#[hist.loc(1000) :, hist.loc(0.3) :]
+    ][hist.loc(1000) :, hist.loc(0.3) :]
 
     mc_hist = control["QCDInclusive2018", "Control"]["hist_collection"]["histogram"][
-        "central", ...#hist.loc(1000) :, hist.loc(0.3): 
+        "central", hist.loc(1000) :, hist.loc(0.3): 
     ]#["central", hist.loc(1000) :, hist.loc(0.3) :]
 
     signal_hist_names = [
@@ -853,7 +851,7 @@ def main():
         # "nnrbf_4": SK(models.NNRBFKernel(odim=2, layer_sizes=(4,))),
         # "testf": SK(models.FunctionRBF(func, ard_num_dims=2)),
         # "nonstat": models.NonStatKernel(ard_num_dims=2),
-         "mykernel": SK(models.NNRBFKernel(odim=2, layer_sizes=(20,5)))
+         "mykernel": SK(models.NNRBFKernel(odim=2, layer_sizes=(30,20,10)))
          # "mykernel": models.NNSMKernel(num_mixtures=4, odim=2, layer_sizes=(4,)),
     }
 

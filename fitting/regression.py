@@ -36,7 +36,8 @@ def makeRegressionData(
     get_shaped_mask=False,
     domain_mask_function=None,
     get_window_mask=False,
-    get_reshape_function=False
+    #get_reshape_function=False,
+    get_derivatives=False,
 ):
     if mask_function is None:
         mask_function = lambda x1, x2: (torch.full_like(x1, False, dtype=torch.bool))
@@ -76,10 +77,18 @@ def makeRegressionData(
         (edges_x1, edges_x2),
     )
     ret = (ret,)
+
+
     if get_mask:
         ret = (*ret, torch.flatten(~centers_mask))
     if get_shaped_mask:
         ret = (*ret, centers_mask)
+
+    if get_derivatives:
+        dx,dy =torch.gradient(bin_values,spacing=(centers_x1,centers_x2))
+        flat_dx = torch.flatten(dx)[torch.flatten(~centers_mask)]
+        flat_dy = torch.flatten(dy)[torch.flatten(~centers_mask)]
+        ret = (*ret,(flat_dx,flat_dy))
     return ret
 
 

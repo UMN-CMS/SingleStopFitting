@@ -440,6 +440,12 @@ def wrapNN(cls_name, kernel):
             self.feature_extractor = LargeFeatureExtractor(**nnargs)
         self.scale_to_bounds = gpytorch.utils.grid.ScaleToBounds(-1.0, 1.0)
 
+        def init_weights(m):
+            if isinstance(m, torch.nn.Linear):
+                torch.nn.init.xavier_uniform(m.weight)
+        self.apply(init_weights)
+
+
     def forward(self, x1, x2, **params):
         # x1_, x2_ = (
         #    self.scale_to_bounds(x1),
