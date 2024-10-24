@@ -442,7 +442,7 @@ def wrapNN(cls_name, kernel):
 
         def init_weights(m):
             if isinstance(m, torch.nn.Linear):
-                torch.nn.init.xavier_uniform(m.weight)
+                torch.nn.init.xavier_uniform_(m.weight)
         self.apply(init_weights)
 
 
@@ -574,11 +574,12 @@ class RBFLayer(torch.nn.Module):
 class NonStatKernel(gpytorch.kernels.RBFKernel):
     is_stationary = False
 
-    def __init__(self, dim=2, count=3, **kwargs):
+    def __init__(self, dim=2, count=4, **kwargs):
         super().__init__(**kwargs)
         self.pre_transform = RBFLayer(dim, count)
         # self.pre_transform = Linear(dim, count)
         self.trans = torch.nn.Linear(count, 1, bias=True)
+        #self.trans=LargeFeatureExtractor(idim=count, layer_sizes=(2,2), odim=1)
 
     def forward(self, x1, x2, diag=False, **params):
         # for m,p in self.named_parameters():

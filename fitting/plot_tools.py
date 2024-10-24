@@ -213,7 +213,7 @@ def createSlices(
         yield val, fig, ax
 
 
-def simpleGrid(ax, edges, inx, iny, cmap="viridis"):
+def simpleGrid(ax, edges, inx, iny, cmap="viridis", **kwargs):
     def addColorbar(ax, vals):
         divider = make_axes_locatable(ax)
         cax = divider.append_axes("right", size="5%", pad=0.05)
@@ -227,7 +227,7 @@ def simpleGrid(ax, edges, inx, iny, cmap="viridis"):
     Z = Z.hist.T
     filled = filled.T
     Z = np.ma.masked_where(~filled, Z)
-    f = ax.pcolormesh(X, Y, Z, cmap=mpl.colormaps[cmap])
+    f = ax.pcolormesh(X, Y, Z, cmap=mpl.colormaps[cmap], **kwargs)
     addColorbar(ax, f)
     return f
 

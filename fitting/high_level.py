@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
+import mplhep
 
 import fitting.utils as fit_utils
 import gpytorch
@@ -26,7 +27,8 @@ from matplotlib.patches import Polygon
 from rich import print
 
 from . import models, regression, transformations, windowing
-from .plot_tools import createSlices, getPolyFromSquares, makeSquares, simpleGrid
+from .plot_tools import (createSlices, getPolyFromSquares, makeSquares,
+                         simpleGrid)
 from .utils import chi2Bins
 
 torch.set_default_dtype(torch.float64)
@@ -131,28 +133,28 @@ def makeDiagnosticPlots(pred, raw_test, raw_train, mask=None, inducing_points=No
     x2 = torch.sum(all_x2)
 
     fig, ax = plt.subplots(layout="tight")
-    simpleGrid(ax, raw_test.E, raw_train.X, raw_train.Y)
+    simpleGrid(ax, raw_test.E, raw_train.X, raw_train.Y, norm=mpl.colors.LogNorm())
     ax.set_title("Masked Inputs (Training)")
     # plotting.addTitles2D(ax, plotting.PlotObject.fromHist(raw_hist))
     addWindow(ax)
     ret["training_points"] = (fig, ax)
 
     fig, ax = plt.subplots(layout="tight")
-    f = simpleGrid(ax, raw_test.E, raw_test.X, pred_mean)
+    f = simpleGrid(ax, raw_test.E, raw_test.X, pred_mean, norm=mpl.colors.LogNorm())
     ax.set_title("GPR Mean Prediction")
     # plotting.addTitles2D(ax, plotting.PlotObject.fromHist(raw_hist))
     addWindow(ax)
     ret["gpr_mean"] = (fig, ax)
 
     fig, ax = plt.subplots(layout="tight")
-    f = simpleGrid(ax, raw_test.E, raw_test.X, pred_mean)
+    f = simpleGrid(ax, raw_test.E, raw_test.X, pred_mean, norm=mpl.colors.LogNorm())
     ax.set_title("GPR Mean Prediction")
     # plotting.addTitles2D(ax, plotting.PlotObject.fromHist(raw_hist))
     addInducing(ax)
     ret["inducing_gpr_mean"] = (fig, ax)
 
     fig, ax = plt.subplots(layout="tight")
-    simpleGrid(ax, raw_test.E, raw_test.X, raw_test.Y)
+    simpleGrid(ax, raw_test.E, raw_test.X, raw_test.Y, norm=mpl.colors.LogNorm())
     ax.set_title("Observed Outputs")
     addWindow(ax)
     ret["observed_outputs"] = (fig, ax)
@@ -173,7 +175,7 @@ def makeDiagnosticPlots(pred, raw_test, raw_train, mask=None, inducing_points=No
 
     fig, ax = plt.subplots(layout="tight")
     f = simpleGrid(ax, raw_test.E, raw_test.X, torch.sqrt(pred.V) / raw_test.Y)
-    f.set_clim(0, 1)
+    f.set_clim(0, 0.1)
     ax.set_title("Relative Uncertainty (std/val)")
     # plotting.addTitles2D(ax, plotting.PlotObject.fromHist(raw_hist))
     addWindow(ax)
@@ -226,8 +228,8 @@ def makeDiagnosticPlots(pred, raw_test, raw_train, mask=None, inducing_points=No
     ret["global_pulls_hist"] = (fig, ax)
 
     fig, ax = plt.subplots(layout="tight")
-    p = all_pulls[mask]
-    ax.hist(p, bins=np.linspace(-5.0, 5.0, 21), density=True)
+    window_p = all_pulls[mask]
+    ax.hist(window_p, bins=np.linspace(-5.0, 5.0, 21), density=True)
     X = torch.linspace(-5, 5, 100)
     g = torch.distributions.Normal(0, 1)
     Y = torch.exp(g.log_prob(X))
@@ -236,6 +238,8 @@ def makeDiagnosticPlots(pred, raw_test, raw_train, mask=None, inducing_points=No
     ax.set_xlabel(r"$\frac{N_{obs}-N_{pred}}{\sigma_{o}}$")
     ax.set_ylabel("Count")
     ret["window_pulls_hist"] = (fig, ax)
+
+
 
     return ret
 
@@ -264,7 +268,7 @@ def summary(samples):
     return site_stats
 
 
-def makePosteriorPred(bkg_mvn, test_data):
+def makePosteriorPred(bkg_mvn, test_data,  mask=None,):
     ret = {}
 
     def statModel(observed=None):
@@ -284,6 +288,18 @@ def makePosteriorPred(bkg_mvn, test_data):
 
     stat_pulls = (bkg_mvn.mean - test_data.Y) / torch.sqrt(test_data.V)
     post_pulls = (bkg_mvn.mean - test_data.Y) / summ["observed"]["std"]
+    pred_only_pulls = (bkg_mvn.mean - test_data.Y) / torch.sqrt(bkg_mvn.variance)
+
+    if mask is not None:
+        squares = makeSquares(test_data.X[mask], test_data.E)
+        points = getPolyFromSquares(squares)
+
+    def addWindow(ax):
+        if mask is None:
+            return
+        else:
+            poly = Polygon(points, edgecolor="green", linewidth=3, fill=False)
+            ax.add_patch(poly)
 
     fig, ax = plt.subplots(layout="tight")
     ax.set_title("Relative Uncertainty In Pred")
@@ -293,8 +309,34 @@ def makePosteriorPred(bkg_mvn, test_data):
         test_data.X,
         torch.sqrt((bkg_mvn.variance)) / bkg_mvn.mean,
     )
-    f.set_clim(0, 1)
+    addWindow(ax)
+    #f.set_clim(0, 0.1)
     ret["post_relative_uncertainty"] = (fig, ax)
+
+    fig, ax = plt.subplots(layout="tight")
+    ax.set_title("Relative Uncertainty In Posterior")
+    f = simpleGrid(
+        ax,
+        test_data.E,
+        test_data.X,
+        summ["observed"]["std"] / bkg_mvn.mean,
+    )
+    addWindow(ax)
+    #f.set_clim(0, 0.1)
+    ret["post_posterior_relative_uncertainty"] = (fig, ax)
+
+    fig, ax = plt.subplots(layout="tight")
+    f = simpleGrid(
+        ax,
+        test_data.E,
+        test_data.X,
+        pred_only_pulls,
+        cmap="coolwarm",
+    )
+    f.set_clim(-2.5, 2.5)
+    ax.set_title("Pull Latent Only")
+    addWindow(ax)
+    ret["post_pull_latent"] = (fig, ax)
 
     fig, ax = plt.subplots(layout="tight")
     f = simpleGrid(
@@ -306,6 +348,7 @@ def makePosteriorPred(bkg_mvn, test_data):
     )
     f.set_clim(-2.5, 2.5)
     ax.set_title("Pull Statistical")
+    addWindow(ax)
     ret["post_pull_statistical"] = (fig, ax)
 
     fig, ax = plt.subplots(layout="tight")
@@ -317,6 +360,7 @@ def makePosteriorPred(bkg_mvn, test_data):
         cmap="coolwarm",
     )
     f.set_clim(-2.5, 2.5)
+    addWindow(ax)
     ax.set_title("Pull Posterior")
     ret["post_pull_posterior"] = (fig, ax)
 
@@ -329,20 +373,34 @@ def makePosteriorPred(bkg_mvn, test_data):
         cmap="coolwarm",
     )
     ax.set_title("Pull Stat - Pull Posterior")
-    f.set_clim(-5, 5)
     ret["post_pull_diff"] = (fig, ax)
 
 
     fig, ax = plt.subplots(layout="tight")
     p = post_pulls
     ax.hist(p, bins=np.linspace(-5.0, 5.0, 21), density=True)
+    ax.set_title("Predictive Pull Distribution -- Full Plane")
     X = torch.linspace(-5, 5, 100)
     g = torch.distributions.Normal(0, 1)
     Y = torch.exp(g.log_prob(X))
-    ax.plot(X, Y)
+    ax.plot(X, Y, label="Unit Normal")
     ax.set_xlabel(r"$\frac{N_{obs}-N_{pred}}{\sigma_{post}}$")
     ax.set_ylabel("Count")
-    ret["global_pred_pulls_hist"] = (fig, ax)
+    ax.legend()
+    ret["post_global_pred_pulls_hist"] = (fig, ax)
+
+
+    fig, ax = plt.subplots(layout="tight")
+    h1 = np.histogram(p.numpy(), bins=10, range=(-5,5),density=True)
+    h2 = np.histogram(p[mask].numpy(), bins=10,  range=(-5,5), density=True)
+    mplhep.histplot(h1, ax=ax, label="Global Pulls")
+    mplhep.histplot(h2, ax=ax, label="Blinded Pulls")
+    ax.plot(X, Y, label="Unit Normal")
+    ax.legend()
+    ax.set_xlabel(r"$\frac{N_{obs}-N_{pred}}{\sigma_{post}}$")
+
+    ret["combo_pulls_hist"] = (fig, ax)
+
 
 
     global_chi2_pred = chi2Bins(
@@ -388,8 +446,7 @@ def makeSlicePlots(pred, test_data, hist, window, dim, save_dir):
 
 
 def bumpCut(X, Y):
-    m = Y > (1 - 200 / X)
-    print(m.size())
+    m = Y > (1 - 450 / X) 
     return m
 
 
@@ -457,7 +514,6 @@ def doCompleteRegression(
             mean_data.V[window_mask],
             mean_data.E
         )
-        print(mean_data)
         mean_transform = transformations.getNormalizationTransform(train_mean_data)
         normalized_test_mean_data = train_transform.transform(test_mean_data)
         normalized_train_mean_data = train_transform.transform(train_mean_data)
@@ -495,13 +551,14 @@ def doCompleteRegression(
         if torch.cuda.is_available() and use_cuda:
             model = model.cuda()
             likelihood = likelihood.cuda()
-
         print(model)
-        for n,p in model.named_parameters():
-            print(n,p)
 
-        if hasattr(model.covar_module, "initialize_from_data"):
-            model.covar_module.initialize_from_data(train.X, train.Y)
+        # if hasattr(model.covar_module, "initialize_from_data"):
+        #     print("INITING")
+        #     model.covar_module.initialize_from_data(train.X, train.Y)
+        # elif hasattr(model.covar_module.base_kernel, "initialize_from_data"):
+        #     print("INITING")
+        #     model.covar_module.base_kernel.initialize_from_data(train.X, train.Y)
 
         def validate(model):
             X = normalized_test_data.X.cuda()
@@ -526,7 +583,7 @@ def doCompleteRegression(
                 likelihood,
                 train,
                 bar=False,
-                iterations=1600,
+                iterations=200,
                 lr=lr,
                 get_evidence=True,
                 chi2mask=train_data.Y > min_counts,
@@ -644,14 +701,14 @@ def doCompleteRegression(
         diagnostic_plots = makeDiagnosticPlots(
             test_pred_data, test_data, train_data, mask
         )
-        p,d = makePosteriorPred(pred_dist, test_data)
+        p,d = makePosteriorPred(pred_dist, test_data, mask)
         diagnostic_plots.update(p)
         data.update(d)
-        if (
-            hasattr(model.covar_module.base_kernel.base_kernel, "feature_extractor")
-        ):
-            print("Saving NN")
+        try:
             diagnostic_plots.update(makeNNPlots(model, test_data))
+            print("Saving NN")
+        except AttributeError:
+            pass
         saveDiagnosticPlots(diagnostic_plots, save_dir)
         # makeSlicePlots(pred_data, test_data, inhist, window_func, 0, save_dir)
         # makeSlicePlots(pred_data, test_data, inhist, window_func, 1, save_dir)
@@ -777,11 +834,7 @@ def func(x):
 
 
 
-
-
-
-def main():
-
+def fit(path, kernel, kernel_name, fit_region):
     with open(
         "regression_results/2018_Signal312_nn_uncomp_0p67_m14_vs_mChiUncompRatio.pkl",
         "rb",
@@ -798,34 +851,36 @@ def main():
 
     bkg_hist = control["Data2018", "Control"]["hist_collection"][
         "histogram"
-    ][hist.loc(1000) :, hist.loc(0.3) :]
+    ]
+    print(bkg_hist)
+    print(fit_region)
+    bkg_hist = bkg_hist[fit_region]
 
     mc_hist = control["QCDInclusive2018", "Control"]["hist_collection"]["histogram"][
-        "central", hist.loc(1000) :, hist.loc(0.3): 
-    ]#["central", hist.loc(1000) :, hist.loc(0.3) :]
+        ("central", *fit_region)]
 
     signal_hist_names = [
-        "signal_312_1200_400",
-        "signal_312_1200_800",
-        "signal_312_1500_400",
+        # "signal_312_1200_400",
+        # "signal_312_1200_800",
+        # "signal_312_1500_400",
         "signal_312_1500_600",
-        "signal_312_1500_1000",
-        "signal_312_2000_900",
-        "signal_312_2000_1200",
+        # "signal_312_1500_1000",
+        # "signal_312_2000_900",
+        # "signal_312_2000_1200",
     ]
     signals_to_scan = [
         (sn, signal312[sn, "Signal312"]["hist_collection"]["histogram"]["central", ...])
         for sn in signal_hist_names
     ]
 
-    rbf = SK(gpytorch.kernels.RBFKernel(ard_num_dims=2))
+    p = Path(path)
 
-    grbf = SK(models.GeneralRBF(ard_num_dims=2))
-    # gsmk = models.GeneralSpectralMixture(ard_num_dims=2, num_mixtures=4)
+    doEstimationForSignals(
+        signals_to_scan, bkg_hist, kernel, p / kernel_name, kernel_name=kernel_name,# mean=mc_hist
+    )
 
-    smk = gpytorch.kernels.SpectralMixtureKernel(num_mixtures=8, ard_num_dims=2)
 
-    kernels = {
+kernels = {
         # "rbf": rbf,
         # "smk": smk,
         # "grq": grq,
@@ -851,26 +906,19 @@ def main():
         # "nnrbf_4": SK(models.NNRBFKernel(odim=2, layer_sizes=(4,))),
         # "testf": SK(models.FunctionRBF(func, ard_num_dims=2)),
         # "nonstat": models.NonStatKernel(ard_num_dims=2),
-         "mykernel": SK(models.NNRBFKernel(odim=2, layer_sizes=(30,20,10)))
-         # "mykernel": models.NNSMKernel(num_mixtures=4, odim=2, layer_sizes=(4,)),
+         "dkl_50_50_10": SK(models.NNRBFKernel(odim=2, layer_sizes=(50,50,10)))
+        # "mykernel": models.NNSMKernel(num_mixtures=4, odim=2, layer_sizes=(4,)),
     }
 
-    p = Path("allscans/control/")
-    # d = doCompleteRegression(
-    #     mc_hist,
-    #     None,
-    #     kernel=rbf,
-    #     save_dir=p/"mc",
-    #     just_model=True,
+def main():
+    mpl.use("Agg")
+    mplhep.style.use("CMS")
+    # kname, kernel = "dkl", SK(models.NNRBFKernel(odim=2, layer_sizes=(10,7)))
+    kname, kernel = "smkdkl", models.NNSMKernel(num_mixtures=4, odim=2, layer_sizes=(25,20,10))
+    # kname, kernel = "nonstat", models.NonStatKernel(ard_num_dims=2)
+    fit("allscans/control_reduced", kernel, kname, (slice(hist.loc(1000), None), slice(hist.loc(0.3), None)))
+    fit("allscans/control", kernel, kname, (slice(None), slice(None)))
 
-
-    #  )
-
-
-    for n, k in kernels.items():
-        doEstimationForSignals(
-            signals_to_scan, bkg_hist, k, p / n, kernel_name=n,# mean=mc_hist
-        )
 
 
 if __name__ == "__main__":

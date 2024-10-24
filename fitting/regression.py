@@ -36,7 +36,7 @@ def makeRegressionData(
     get_shaped_mask=False,
     domain_mask_function=None,
     get_window_mask=False,
-    #get_reshape_function=False,
+    # get_reshape_function=False,
     get_derivatives=False,
 ):
     if mask_function is None:
@@ -78,17 +78,16 @@ def makeRegressionData(
     )
     ret = (ret,)
 
-
     if get_mask:
         ret = (*ret, torch.flatten(~centers_mask))
     if get_shaped_mask:
         ret = (*ret, centers_mask)
 
     if get_derivatives:
-        dx,dy =torch.gradient(bin_values,spacing=(centers_x1,centers_x2))
+        dx, dy = torch.gradient(bin_values, spacing=(centers_x1, centers_x2))
         flat_dx = torch.flatten(dx)[torch.flatten(~centers_mask)]
         flat_dy = torch.flatten(dy)[torch.flatten(~centers_mask)]
-        ret = (*ret,(flat_dx,flat_dy))
+        ret = (*ret, (flat_dx, flat_dy))
     return ret
 
 
@@ -132,15 +131,25 @@ def optimizeHyperparams(
 ):
     model.train()
     likelihood.train()
-    optimizer = torch.optim.Adam(model.parameters(), lr=lr)
+    optimizer = torch.optim.Adam(  # model.parameters()
+        [
+           # {"params": model.feature_extractor.parameters()},
+            {"params": model.covar_module.parameters()},
+            {"params": model.mean_module.parameters()},
+            {"params": model.likelihood.parameters()},
+        ],
+        lr=lr,
+    )
+    # optimizer = torch.optim.SGD(model.parameters(), lr=lr)
+    # optimizer = torch.optim.AdamW(model.parameters(), lr=lr)
     # optimizer = torch.optim.LBFGS(model.parameters(), lr=lr)
     if mll is None:
         mll = gpytorch.mlls.ExactMarginalLogLikelihood(likelihood, model)
-        # mll = gpytorch.mlls.LeaveOneOutPseudoLikelihood(likelihood, model)
+        loocv = gpytorch.mlls.LeaveOneOutPseudoLikelihood(likelihood, model)
 
-    # scheduler = torch.optim.lr_scheduler.StepLR(
-    #     optimizer, step_size=iterations // 3, gamma=0.1
-    # )
+    scheduler = torch.optim.lr_scheduler.StepLR(
+        optimizer, step_size=iterations // 3, gamma=0.1
+    )
     # scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, "min",)
     # scheduler = torch.optim.lr_scheduler.CyclicLR(
     #     optimizer, 0.1, 0.001, step_size_up=100,
@@ -155,34 +164,30 @@ def optimizeHyperparams(
     m = train_data.Y > k
 
     slr = lr
+
+    def closure():
+        optimizer.zero_grad()
+        output = model(train_data.X)
+        loss = -mll(output, train_data.Y)
+        loss = loss - loocv(output, train_data.Y)
+        loss.backward()
+        return loss
+
     with context as progress:
         if bar:
             task1 = progress.add_task("[red]Optimizing...", total=iterations)
-        # def closure():
-        #     optimizer.zero_grad()
-        #     output = model(train_data.X)
-        #     ml = -mll(output, train_data.Y)
-        #     ml.backward()
-        #     return ml
         for i in range(iterations):
             optimizer.zero_grad()
-
             output = model(train_data.X)
-            ml = -mll(output, train_data.Y)
-            loss = ml
-            # optimizer.step(closure)
+            loss = -mll(output, train_data.Y)
+            # loss = -loocv(output, train_data.Y)
+            loss.backward()
+            optimizer.step()
+            scheduler.step()
 
-            # scheduler.step()
-            # scheduler.step(loss)
-            # slr = get_lr(optimizer)
-            # slr = scheduler.get_last_lr()[0]
-
-            # if slr < 1e-3 * lr:
-            #    print(
-            #        f"Iter {i} (lr={slr}): Loss = {round(loss.item(),4)}"
-            #    )
-            #    evidence = float(loss.item())
-            #    break
+            slr = scheduler.get_last_lr()[0]
+            # loss = optimizer.step(closure)
+            # print(x)
 
             if bar:
                 progress.update(
@@ -192,7 +197,7 @@ def optimizeHyperparams(
                 )
                 progress.refresh()
             else:
-                if (i % (iterations // 20) == 0) or i == iterations - 1:
+                if (i % (iterations // 20) == 0) or i == iterations - 1 or True:
                     model.eval()
                     if val is not None:
                         v = val(model)
@@ -200,26 +205,31 @@ def optimizeHyperparams(
                     model.train()
                     chi2 = chi2Bins(
                         output.mean, train_data.Y, train_data.V, mask=chi2mask
-                    ).item()
+                    )  # .item()
+
+                    # loss =  loss + abs(1 - chi2)
                     chi2_p = chi2Bins(output.mean, train_data.Y, output.variance).item()
                     s = (
-                        f"Iter {i} (lr={slr:0.4f}): MLL={round(loss.item(),4)},"
-                        f"X2/B={chi2:0.2f}, "
+                        f"Iter {i} (lr={slr:0.4f}): Loss={round(loss.item(),4)},"
+                        f"X2/B={chi2.item():0.2f}, "
                         f"X2P/B={chi2_p:0.2f}"
                     )
                     if val is not None:
                         s += f" Val={v:0.2f}"
                     for n, p in model.named_parameters():
-                        x = p.round(decimals=2).tolist()
+                        x = p.flatten().round(decimals=2).tolist()
                         if not isinstance(x, list) or len(x) < 4:
                             print(f"{n} = {x}")
                     ls = None
-                    if hasattr(model.covar_module.base_kernel, "lengthscale"):
-                        ls = model.covar_module.base_kernel.lengthscale
-                    elif hasattr(
-                        model.covar_module.base_kernel.base_kernel, "lengthscale"
-                    ):
-                        ls = model.covar_module.base_kernel.base_kernel.lengthscale
+                    try:
+                        if hasattr(model.covar_module.base_kernel, "lengthscale"):
+                            ls = model.covar_module.base_kernel.lengthscale
+                        elif hasattr(
+                            model.covar_module.base_kernel.base_kernel, "lengthscale"
+                        ):
+                            ls = model.covar_module.base_kernel.base_kernel.lengthscale
+                    except Exception as e:
+                        pass
 
                     if ls is not None:
                         print(f"lengthscale = {ls.round(decimals=2).tolist()}")
@@ -228,8 +238,6 @@ def optimizeHyperparams(
 
                     evidence = float(loss.item())
                     pass
-            loss.backward()
-            optimizer.step()
 
     if get_evidence:
         return model, likelihood, evidence
