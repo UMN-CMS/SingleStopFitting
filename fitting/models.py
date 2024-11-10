@@ -1,5 +1,4 @@
 import math
-import sys
 
 import gpytorch
 import torch
@@ -561,7 +560,7 @@ NNMaternKernel = wrapNN("NNMaternKernel", gpytorch.kernels.MaternKernel)
 class RBFLayer(torch.nn.Module):
     def __init__(self, dim, count):
         super().__init__()
-        self.length_scales = torch.nn.Parameter(torch.rand(count, 2)+0.01 )
+        self.length_scales = torch.nn.Parameter(torch.rand(count, dim)+0.01 )
         self.centers = torch.nn.Parameter(torch.rand(count, dim))
 
     def forward(self, vals):
@@ -578,7 +577,7 @@ class NonStatKernel(gpytorch.kernels.RBFKernel):
         super().__init__(**kwargs)
         self.pre_transform = RBFLayer(dim, count)
         # self.pre_transform = Linear(dim, count)
-        self.trans = torch.nn.Linear(count, 1, bias=True)
+        self.trans = torch.nn.Linear(count, 1, bias=False)
         #self.trans=LargeFeatureExtractor(idim=count, layer_sizes=(2,2), odim=1)
 
     def forward(self, x1, x2, diag=False, **params):

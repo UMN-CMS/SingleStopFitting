@@ -1,5 +1,4 @@
 import contextlib
-import copy
 from collections import namedtuple
 from dataclasses import dataclass
 
@@ -9,7 +8,7 @@ from rich import print
 from rich.progress import Progress
 
 from .models import ExactAnyKernelModel
-from .utils import chi2Bins
+from .utils import chi2Bins, dataToHist
 
 DataValues = namedtuple("DataValues", "X Y V E")
 
@@ -27,6 +26,13 @@ class DataValues:
     def fromGpu(self):
         return DataValues(self.X.cpu(), self.Y.cpu(), self.V.cpu(), self.E)
 
+    @property
+    def dim(self):
+        return len(self.E)
+
+    def toHist(self):
+        return dataToHist(self.X,self.Y,self.E,self.V)
+
 
 def makeRegressionData(
     histogram,
@@ -36,36 +42,29 @@ def makeRegressionData(
     get_shaped_mask=False,
     domain_mask_function=None,
     get_window_mask=False,
-    # get_reshape_function=False,
-    get_derivatives=False,
 ):
     if mask_function is None:
-        mask_function = lambda x1, x2: (torch.full_like(x1, False, dtype=torch.bool))
+        mask_function = lambda *x: (torch.full_like(x[0], False, dtype=torch.bool))
 
-    edges_x1 = torch.from_numpy(histogram.axes[0].edges)
-    edges_x2 = torch.from_numpy(histogram.axes[1].edges)
-
-    centers_x1 = torch.diff(edges_x1) / 2 + edges_x1[:-1]
-    centers_x2 = torch.diff(edges_x2) / 2 + edges_x2[:-1]
-
-    bin_values = torch.from_numpy(histogram.values()).T
-    bin_vars = torch.from_numpy(histogram.variances()).T
-    centers_grid_x1, centers_grid_x2 = torch.meshgrid(
-        centers_x1, centers_x2, indexing="xy"
-    )
+    edges = tuple(torch.from_numpy(a.edges) for a in histogram.axes)
+    centers = tuple(torch.diff(e) / 2 + e[:-1] for e in edges)
+    bin_values = torch.from_numpy(histogram.values())
+    bin_vars = torch.from_numpy(histogram.variances())
+    if len(edges) == 2:
+        bin_values = bin_values.T
+        bin_vars = bin_vars.T
+        
+    centers_grid = torch.meshgrid(*centers, indexing="xy")
     if exclude_less:
         domain_mask = bin_values < exclude_less
     else:
         domain_mask = torch.full_like(bin_values, False, dtype=torch.bool)
 
-    centers_grid = torch.stack((centers_grid_x1, centers_grid_x2), axis=2)
-
+    centers_grid = torch.stack(centers_grid, axis=-1)
+    unbound = torch.unbind(centers_grid, dim=-1)
     if domain_mask_function is not None:
-        domain_mask = domain_mask | domain_mask_function(
-            centers_grid[:, :, 0], centers_grid[:, :, 1]
-        )
-
-    m = mask_function(centers_grid[:, :, 0], centers_grid[:, :, 1])
+        domain_mask = domain_mask | domain_mask_function(*unbound)
+    m = mask_function(*unbound)
     centers_mask = m | domain_mask
     flat_centers = torch.flatten(centers_grid, end_dim=1)
     flat_bin_values = torch.flatten(bin_values)
@@ -74,20 +73,13 @@ def makeRegressionData(
         flat_centers[torch.flatten(~centers_mask)],
         flat_bin_values[torch.flatten(~centers_mask)],
         flat_bin_vars[torch.flatten(~centers_mask)],
-        (edges_x1, edges_x2),
+        edges,
     )
     ret = (ret,)
-
     if get_mask:
         ret = (*ret, torch.flatten(~centers_mask))
     if get_shaped_mask:
         ret = (*ret, centers_mask)
-
-    if get_derivatives:
-        dx, dy = torch.gradient(bin_values, spacing=(centers_x1, centers_x2))
-        flat_dx = torch.flatten(dx)[torch.flatten(~centers_mask)]
-        flat_dy = torch.flatten(dy)[torch.flatten(~centers_mask)]
-        ret = (*ret, (flat_dx, flat_dy))
     return ret
 
 
@@ -112,11 +104,6 @@ def createModel(train_data, kernel=None, model_maker=None, learn_noise=False, **
     return model, likelihood
 
 
-def get_lr(optimizer):
-    for param_group in optimizer.param_groups:
-        return param_group["lr"]
-
-
 def optimizeHyperparams(
     model,
     likelihood,
@@ -131,38 +118,18 @@ def optimizeHyperparams(
 ):
     model.train()
     likelihood.train()
-    optimizer = torch.optim.Adam(  # model.parameters()
-        [
-           # {"params": model.feature_extractor.parameters()},
-            {"params": model.covar_module.parameters()},
-            {"params": model.mean_module.parameters()},
-            {"params": model.likelihood.parameters()},
-        ],
-        lr=lr,
-    )
-    # optimizer = torch.optim.SGD(model.parameters(), lr=lr)
-    # optimizer = torch.optim.AdamW(model.parameters(), lr=lr)
-    # optimizer = torch.optim.LBFGS(model.parameters(), lr=lr)
+    optimizer = torch.optim.Adam(model.parameters(), lr=lr)
     if mll is None:
         mll = gpytorch.mlls.ExactMarginalLogLikelihood(likelihood, model)
         loocv = gpytorch.mlls.LeaveOneOutPseudoLikelihood(likelihood, model)
 
     scheduler = torch.optim.lr_scheduler.StepLR(
-        optimizer, step_size=iterations // 3, gamma=0.1
+        optimizer, step_size=iterations // 1, gamma=0.1
     )
-    # scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, "min",)
-    # scheduler = torch.optim.lr_scheduler.CyclicLR(
-    #     optimizer, 0.1, 0.001, step_size_up=100,
-    # )
-    # scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(optimizer, 100,)
-    # scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, 0.99)
-
     context = Progress() if bar else contextlib.nullcontext()
     evidence = None
-
-    k = torch.kthvalue(train_data.Y, int(train_data.Y.size(0) * 0.1)).values
+    k = torch.kthvalue(train_data.Y, int(train_data.Y.size(0) * 0.05)).values
     m = train_data.Y > k
-
     slr = lr
 
     def closure():
@@ -173,71 +140,56 @@ def optimizeHyperparams(
         loss.backward()
         return loss
 
-    with context as progress:
-        if bar:
-            task1 = progress.add_task("[red]Optimizing...", total=iterations)
-        for i in range(iterations):
-            optimizer.zero_grad()
+    for i in range(iterations):
+        optimizer.zero_grad()
+        output = model(train_data.X)
+        loss = -mll(output, train_data.Y)
+        # loss = -loocv(output, train_data.Y)
+        loss.backward()
+        optimizer.step()
+        scheduler.step()
+        slr = scheduler.get_last_lr()[0]
+
+        if (i % (iterations // 20) == 0) or i == iterations - 1:
+            model.eval()
+            if val is not None:
+                v = val(model)
             output = model(train_data.X)
-            loss = -mll(output, train_data.Y)
-            # loss = -loocv(output, train_data.Y)
-            loss.backward()
-            optimizer.step()
-            scheduler.step()
+            model.train()
+            chi2 = chi2Bins(
+                output.mean, train_data.Y, train_data.V, mask=chi2mask
+            )  # .item()
 
-            slr = scheduler.get_last_lr()[0]
-            # loss = optimizer.step(closure)
-            # print(x)
+            # loss =  loss + abs(1 - chi2)
+            chi2_p = chi2Bins(output.mean, train_data.Y, output.variance).item()
+            s = (
+                f"Iter {i} (lr={slr:0.4f}): Loss={round(loss.item(),4)},"
+                f"X2/B={chi2.item():0.2f}, "
+                f"X2P/B={chi2_p:0.2f}"
+            )
+            if val is not None:
+                s += f" Val={v:0.2f}"
+            for n, p in model.named_parameters():
+                x = p.flatten().round(decimals=2).tolist()
+                if not isinstance(x, list) or len(x) < 4:
+                    print(f"{n} = {x}")
+            ls = None
+            try:
+                if hasattr(model.covar_module.base_kernel, "lengthscale"):
+                    ls = model.covar_module.base_kernel.lengthscale
+                elif hasattr(model.covar_module.base_kernel.base_kernel, "lengthscale"):
+                    ls = model.covar_module.base_kernel.base_kernel.lengthscale
+            except Exception as e:
+                pass
 
-            if bar:
-                progress.update(
-                    task1,
-                    advance=1,
-                    description=f"[red]Optimizing(Loss is {round(loss.item(),3)})...",
-                )
-                progress.refresh()
-            else:
-                if (i % (iterations // 20) == 0) or i == iterations - 1 or True:
-                    model.eval()
-                    if val is not None:
-                        v = val(model)
-                    output = model(train_data.X)
-                    model.train()
-                    chi2 = chi2Bins(
-                        output.mean, train_data.Y, train_data.V, mask=chi2mask
-                    )  # .item()
+            if ls is not None:
+                print(f"lengthscale = {ls.round(decimals=2).tolist()}")
 
-                    # loss =  loss + abs(1 - chi2)
-                    chi2_p = chi2Bins(output.mean, train_data.Y, output.variance).item()
-                    s = (
-                        f"Iter {i} (lr={slr:0.4f}): Loss={round(loss.item(),4)},"
-                        f"X2/B={chi2.item():0.2f}, "
-                        f"X2P/B={chi2_p:0.2f}"
-                    )
-                    if val is not None:
-                        s += f" Val={v:0.2f}"
-                    for n, p in model.named_parameters():
-                        x = p.flatten().round(decimals=2).tolist()
-                        if not isinstance(x, list) or len(x) < 4:
-                            print(f"{n} = {x}")
-                    ls = None
-                    try:
-                        if hasattr(model.covar_module.base_kernel, "lengthscale"):
-                            ls = model.covar_module.base_kernel.lengthscale
-                        elif hasattr(
-                            model.covar_module.base_kernel.base_kernel, "lengthscale"
-                        ):
-                            ls = model.covar_module.base_kernel.base_kernel.lengthscale
-                    except Exception as e:
-                        pass
+            print(s)
 
-                    if ls is not None:
-                        print(f"lengthscale = {ls.round(decimals=2).tolist()}")
-
-                    print(s)
-
-                    evidence = float(loss.item())
-                    pass
+            evidence = float(loss.item())
+            # if chi2 < 1.05 and i > 20:
+            #     break
 
     if get_evidence:
         return model, likelihood, evidence
@@ -251,11 +203,10 @@ def getPrediction(model, likelihood, test_data):
     return observed_pred
 
 
-def getBlindedMask(inputs, pred_mean, test_mean, test_var, mask_func):
-    mask = mask_func(inputs[:, 0], inputs[:, 1])
+def getBlindedMask(inputs, mask_func):
+    if inputs.dim() > 1:
+        unbound = torch.unbind(inputs, dim=-1)
+    else:
+        unbound = (inputs,)
+    mask = mask_func(*unbound)
     return mask
-    # pred_mean = pred_mean[mask]
-    # test_mean = test_mean[mask]
-    # test_var = test_var[mask]
-    # num = torch.count_nonzero(mask)
-    # return torch.sum((test_mean - pred_mean) ** 2 / test_var) / num

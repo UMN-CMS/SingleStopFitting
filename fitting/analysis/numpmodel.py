@@ -10,16 +10,12 @@ import pickle
 from pathlib import Path
 
 import arviz as az
-import hist
 import jax
 import jax.numpy as jnp
 import pyro.distributions as pdist
 import pyro.infer as pinf
 import torch
-from analyzer.core import AnalysisResult
 from analyzer.datasets import SampleManager
-from fitting.high_level import RegressionModel, SignalData
-from fitting.regression import DataValues, makeRegressionData
 from fitting.utils import getScaledEigenvecs
 from jax import random
 from pyro.infer import Predictive

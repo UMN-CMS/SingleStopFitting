@@ -3,17 +3,12 @@ from pathlib import Path
 import hist
 import pyro
 import pyro.distributions as dist
-import pyro.infer.reparam as pir
-import pyro.poutine as poutine
 import torch
 from analyzer.core import AnalysisResult
 from analyzer.datasets import SampleManager
-from fitting.high_level import RegressionModel
 from fitting.regression import DataValues, makeRegressionData
 from fitting.utils import getScaledEigenvecs
-from pyro.infer import HMC, MCMC, NUTS, SVI, Predictive, Trace_ELBO
-from pyro.infer.autoguide import AutoDelta, AutoDiagonalNormal, AutoMultivariateNormal
-from pyro.optim import Adam
+from pyro.infer import MCMC, NUTS
 
 
 def statModel(bkg_mean, bkg_transform, signal_dist, observed=None):

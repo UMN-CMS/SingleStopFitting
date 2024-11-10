@@ -1,16 +1,17 @@
 from collections import Counter, namedtuple
-import matplotlib.pyplot as plt
-import matplotlib as mpl
-import numpy as np
 import torch
-from mpl_toolkits.axes_grid1 import make_axes_locatable
-#import mplhep
-
-from .regression import getPrediction
-from .utils import pointsToGrid
+from .utils import pointsToGrid, dataToHist
+import mplhep
 
 Point = namedtuple("Point", "x y")
 Square = namedtuple("Square", "bl s")
+
+import mplhep
+def addAxesToHist(ax, size=0.1, pad=0.1, position="bottom", extend=False):
+    new_ax = mplhep.append_axes(ax, size, pad, position, extend)
+    current_axes = getattr(ax, f"{position}_axes", [])
+    setattr(ax, f"{position}_axes", current_axes + [new_ax])
+    return new_ax
 
 
 def makeSquares(points, edges):
@@ -32,6 +33,13 @@ def makeSquares(points, edges):
     t = f[h.hist > 0]
     return t
 
+def lexsort(keys, dim=-1):
+    idx = keys[:,-1].argsort(dim=dim, stable=True)
+    for i in range(keys.size(dim)-2, -1, -1):
+        k = keys.select(dim, i)
+        idx = idx.gather(dim, k.gather(dim, idx).argsort(dim=dim, stable=True))
+    
+    return idx
 
 def getPolyFromSquares(squares):
     l = list(
@@ -41,10 +49,11 @@ def getPolyFromSquares(squares):
     b = torch.tensor(boundary_points)
     center = b.mean(axis=0)
     diffs = b - center
-    angles = torch.atan2(diffs[:, 1], diffs[:, 0])
-    mask = torch.argsort(angles)
-    return b[mask].tolist()
-
+    angles = torch.atan2(diffs[:, 1], diffs[:, 0]).round(decimals=5)
+    stacked = torch.stack((angles, torch.linalg.vector_norm(diffs, dim=-1)), dim=-1)
+    a = lexsort(stacked)
+    #mask = torch.argsort(angles)
+    return b[a].tolist()
 
 def convexHull(points):
     e = 0.001
@@ -73,176 +82,362 @@ def convexHull(points):
     return hull
 
 
-def plotGaussianProcess(ax, pobj, mask=None):
-    mean = pobj.values
-    dev = np.sqrt(pobj.variances)
-    points = pobj.axes[0].centers
-    if mask is not None:
-        mean = mean[mask]
-        dev = dev[mask]
-        points = points[mask]
-    ax.plot(points, mean, label="Mean prediction", color="tab:orange")
-    ax.fill_between(
-        points,
-        mean + dev,
-        mean - dev,
-        alpha=0.3,
-        color="tab:orange",
-        label=r"Mean$\pm \sigma$",
-    )
-    return ax
-
-
-def generatePulls(ax, observed, model, observed_title="", mask=None, domain=None):
-    edges, data, variances = observed
-    mean, model_variance = model
-
-    model_obj = plotting.PlotObject.fromNumpy((mean, edges), model_variance, mask=mask)
-    obs_obj = plotting.PlotObject.fromNumpy(
-        (data, edges), variances, title=observed_title, mask=mask
-    )
-
-    plotting.drawAsScatter(ax, obs_obj, yerr=True)
-    plotGaussianProcess(ax, model_obj, mask=mask)
-
-    ax.tick_params(axis="x", labelbottom=False)
-    plotting.addAxesToHist(ax, num_bottom=1, bottom_pad=0)
-    # if sig_hist:
-    #   drawAs1DHist(ax, PlotObject(sig_hist, "Injected Signal"), yerr=True, fill=None)
-    ax.set_yscale("linear")
-    if domain:
-        ax.set_xrange(domain)
-
-    ab = ax.bottom_axes[0]
-    plotting.drawPull(ab, model_obj, obs_obj, hline_list=[-1, 0, 1])
-    ab.set_ylim(-3, 3)
-
-    # ls = np.linspace(min_bound, 3000, 2000).reshape(-1, 1)
-    # mean_at_pred, upper_at_pred, lower_at_pred, variance_at_pred = getPrediction(
-    #    model, torch.from_numpy(ls)
-    # )
-    # ab.set_ylabel(r"$\frac{obs - pred}{\sigma_{o}}$")
-
-    return ax
-
-
-def createSlices(
-    pred_mean,
-    pred_variance,
-    test_mean,
-    test_variance,
-    bin_edges,
-    valid,
-    slice_dim=1,
-    mask_function=None,
-    observed_title="",
-    domain=None,
-    just_window=False,
+def hist2dplot(
+    H,
+    xbins=None,
+    ybins=None,
+    labels=None,
+    cbar: bool = True,
+    cbarsize="7%",
+    cbarpad=0.2,
+    cbarpos="right",
+    cbarextend=True,
+    cmin=None,
+    cmax=None,
+    ax = None,
+    flow="hint",
+    **kwargs,
 ):
-    dim = slice_dim
-    num_slices = pred_mean.shape[dim]
 
-    centers = bin_edges[dim][:-1] + torch.diff(bin_edges[dim]) / 2
-    c0 = bin_edges[0][:-1] + torch.diff(bin_edges[0]) / 2
-    c1 = bin_edges[1][:-1] + torch.diff(bin_edges[1]) / 2
-    c = (c0, c1)
-    if mask_function:
-        m1, m2 = mask_function(*torch.meshgrid(c, indexing="xy"))
-        mask = m1 & m2
-        mask = mask.T
+
+    import collections.abc
+    import inspect
+    import matplotlib as mpl
+    import matplotlib.pyplot as plt
+    import numpy as np
+    from mplhep.plot import append_axes, make_square_add_cbar
+    from mplhep.utils import (
+        Plottable,
+        get_histogram_axes_title,
+        get_plottable_protocol_bins,
+        hist_object_handler,
+        isLight,
+        process_histogram_parts,
+        align_marker,
+        to_padded2d,
+    )
+    from matplotlib.offsetbox import AnchoredText
+    from matplotlib.transforms import Bbox
+    from mpl_toolkits.axes_grid1 import axes_size, make_axes_locatable
+    from collections import OrderedDict, namedtuple
+
+    ColormeshArtists = namedtuple("ColormeshArtists", "pcolormesh cbar text")
+
+
+    """
+    Create a 2D histogram plot from `np.histogram`-like inputs.
+
+    Parameters
+    ----------
+    H : object
+        Histogram object with containing values and optionally bins. Can be:
+
+        - `np.histogram` tuple
+        - `boost_histogram` histogram object
+        - raw histogram values as list of list or 2d-array
+
+    xbins : 1D array-like, optional, default None
+        Histogram bins along x axis, if not part of ``H``.
+    ybins : 1D array-like, optional, default None
+        Histogram bins along y axis, if not part of ``H``.
+    labels : 2D array (H-like) or bool, default None, optional
+        Array of per-bin labels to display. If ``True`` will
+        display numerical values
+    cbar : bool, optional, default True
+        Draw a colorbar. In contrast to mpl behaviors the cbar axes is
+        appended in such a way that it doesn't modify the original axes
+        width:height ratio.
+    cbarsize : str or float, optional, default "7%"
+        Colorbar width.
+    cbarpad : float, optional, default 0.2
+        Colorbar distance from main axis.
+    cbarpos : {'right', 'left', 'bottom', 'top'}, optional,  default "right"
+        Colorbar position w.r.t main axis.
+    cbarextend : bool, optional, default False
+        Extends figure size to keep original axes size same as without cbar.
+        Only safe for 1 axes per fig.
+    cmin : float, optional
+        Colorbar minimum.
+    cmax : float, optional
+        Colorbar maximum.
+    ax : matplotlib.axes.Axes, optional
+        Axes object (if None, last one is fetched or one is created)
+    flow :  str, optional {"show", "sum","hint", None}
+            Whether plot the under/overflow bin. If "show", add additional under/overflow bin. If "sum", add the under/overflow bin content to first/last bin. "hint" would highlight the bins with under/overflow contents
+    **kwargs :
+        Keyword arguments passed to underlying matplotlib function - pcolormesh.
+
+    Returns
+    -------
+        Hist2DArtist
+
+    """
+
+    # ax check
+    if ax is None:
+        ax = plt.gca()
     else:
-        mask = None
-    orth_ax = c[dim]
-    main_ax = c[1 - dim]
-    orth_e = bin_edges[dim]
-    main_e = bin_edges[1 - dim]
-    for i in range(num_slices):
-        val = centers[i]
-        if mask_function:
-            s_mask = mask.select(dim, i)
-            in_win1 = main_e[torch.cat((s_mask, torch.tensor([False])))]
-            in_win2 = main_e[torch.cat((torch.tensor([False]), s_mask))]
+        if not isinstance(ax, plt.Axes):
+            raise ValueError("ax must be a matplotlib Axes object")
 
-        if mask_function and len(in_win1) != 0:
-            window = [torch.min(in_win1), torch.max(in_win2)]
+    h = hist_object_handler(H, xbins, ybins)
+
+    # TODO: use Histogram everywhere
+
+    H = np.copy(h.values())
+    xbins, xtick_labels = get_plottable_protocol_bins(h.axes[0])
+    ybins, ytick_labels = get_plottable_protocol_bins(h.axes[1])
+    # Show under/overflow bins
+    # "show": Add additional bin with 2 times bin width
+    if (
+        hasattr(h, "values")
+        and "flow" not in inspect.getfullargspec(h.values).args
+        and flow is not None
+    ):
+        print(
+            f"Warning: {type(h)} is not allowed to get flow bins, flow bin option set to None"
+        )
+        flow = None
+    elif flow in ["hint", "show"]:
+        xwidth, ywidth = (xbins[-1] - xbins[0]) * 0.05, (ybins[-1] - ybins[0]) * 0.05
+        pxbins = np.r_[xbins[0] - xwidth, xbins, xbins[-1] + xwidth]
+        pybins = np.r_[ybins[0] - ywidth, ybins, ybins[-1] + ywidth]
+        padded = to_padded2d(h)
+        hint_xlo, hint_xhi, hint_ylo, hint_yhi = True, True, True, True
+        if np.all(padded[0, :] == 0):
+            padded = padded[1:, :]
+            pxbins = pxbins[1:]
+            hint_xlo = False
+        if np.all(padded[-1, :] == 0):
+            padded = padded[:-1, :]
+            pxbins = pxbins[:-1]
+            hint_xhi = False
+        if np.all(padded[:, 0] == 0):
+            padded = padded[:, 1:]
+            pybins = pybins[1:]
+            hint_ylo = False
+        if np.all(padded[:, -1] == 0):
+            padded = padded[:, :-1]
+            pybins = pybins[:-1]
+            hint_yhi = False
+        if flow == "show":
+            H = padded
+            xbins, ybins = pxbins, pybins
+    elif flow == "sum":
+        H = np.copy(h.values())
+        # Sum borders
+        try:
+            H[0], H[-1] = (
+                H[0] + h.values(flow=True)[0, 1:-1],  # type: ignore[call-arg]
+                H[-1] + h.values(flow=True)[-1, 1:-1],  # type: ignore[call-arg]
+            )
+            H[:, 0], H[:, -1] = (
+                H[:, 0] + h.values(flow=True)[1:-1, 0],  # type: ignore[call-arg]
+                H[:, -1] + h.values(flow=True)[1:-1, -1],  # type: ignore[call-arg]
+            )
+            # Sum corners to corners
+            H[0, 0], H[-1, -1], H[0, -1], H[-1, 0] = (
+                h.values(flow=True)[0, 0] + H[0, 0],  # type: ignore[call-arg]
+                h.values(flow=True)[-1, -1] + H[-1, -1],  # type: ignore[call-arg]
+                h.values(flow=True)[0, -1] + H[0, -1],  # type: ignore[call-arg]
+                h.values(flow=True)[-1, 0] + H[-1, 0],  # type: ignore[call-arg]
+            )
+        except TypeError as error:
+            if "got an unexpected keyword argument 'flow'" in str(error):
+                raise TypeError(
+                    f"The histograms value method {repr(h)} does not take a 'flow' argument. UHI Plottable doesn't require this to have, but it is required for this function."
+                    f" Implementations like hist/boost-histogram support this argument."
+                ) from error
+    xbin_centers = xbins[1:] - np.diff(xbins) / float(2)
+    ybin_centers = ybins[1:] - np.diff(ybins) / float(2)
+
+    _x_axes_label = ax.get_xlabel()
+    x_axes_label = (
+        _x_axes_label if _x_axes_label != "" else get_histogram_axes_title(h.axes[0])
+    )
+    _y_axes_label = ax.get_ylabel()
+    y_axes_label = (
+        _y_axes_label if _y_axes_label != "" else get_histogram_axes_title(h.axes[1])
+    )
+
+    H = H.T
+
+    # if cmin is not None:
+    #     H[H < cmin] = None
+    # if cmax is not None:
+    #     H[H > cmax] = None
+
+    X, Y = np.meshgrid(xbins, ybins)
+
+    kwargs.setdefault("shading", "flat")
+    pc = ax.pcolormesh(X, Y, H, vmin=cmin, vmax=cmax, **kwargs)
+
+    if x_axes_label:
+        ax.set_xlabel(x_axes_label)
+    if y_axes_label:
+        ax.set_ylabel(y_axes_label)
+
+    ax.set_xlim(xbins[0], xbins[-1])
+    ax.set_ylim(ybins[0], ybins[-1])
+
+    if xtick_labels is None:  # Ordered axis
+        if len(ax.get_xticks()) > len(xbins) * 0.7:
+            ax.set_xticks(xbins)
+    else:  # Categorical axis
+        ax.set_xticks(xbin_centers)
+        ax.set_xticklabels(xtick_labels)
+    if ytick_labels is None:
+        if len(ax.get_yticks()) > len(ybins) * 0.7:
+            ax.set_yticks(ybins)
+    else:  # Categorical axis
+        ax.set_yticks(ybin_centers)
+        ax.set_yticklabels(ytick_labels)
+
+    if cbar:
+        cax = append_axes(
+            ax, size=cbarsize, pad=cbarpad, position=cbarpos, extend=cbarextend
+        )
+        cb_obj = plt.colorbar(pc, cax=cax)
+    else:
+        cb_obj = None
+
+    plt.sca(ax)
+    if flow == "show":
+        if hint_xlo:
+            ax.plot(
+                [xbins[1]] * 2,
+                [0, 1],
+                ls="--",
+                color="lightgrey",
+                clip_on=False,
+                transform=ax.get_xaxis_transform(),
+            )
+        if hint_xhi:
+            ax.plot(
+                [xbins[-2]] * 2,
+                [0, 1],
+                ls="--",
+                color="lightgrey",
+                clip_on=False,
+                transform=ax.get_xaxis_transform(),
+            )
+        if hint_ylo:
+            ax.plot(
+                [0, 1],
+                [ybins[1]] * 2,
+                ls="--",
+                color="lightgrey",
+                clip_on=False,
+                transform=ax.get_yaxis_transform(),
+            )
+        if hint_yhi:
+            ax.plot(
+                [0, 1],
+                [ybins[-2]] * 2,
+                ls="--",
+                color="lightgrey",
+                clip_on=False,
+                transform=ax.get_yaxis_transform(),
+            )
+    elif flow == "hint":
+        if (fig := ax.figure) is None:
+            raise ValueError("No figure found.")
+        _marker_size = (
+            30
+            * ax.get_window_extent().transformed(fig.dpi_scale_trans.inverted()).width
+        )
+        if hint_xlo:
+            ax.scatter(
+                0,
+                0,
+                _marker_size,
+                marker=align_marker("<", halign="right", valign="bottom"),
+                edgecolor="black",
+                zorder=5,
+                clip_on=False,
+                facecolor="white",
+                transform=ax.transAxes,
+            )
+        if hint_xhi:
+            ax.scatter(
+                1,
+                0,
+                _marker_size,
+                marker=align_marker(">", halign="left"),
+                edgecolor="black",
+                zorder=5,
+                clip_on=False,
+                facecolor="white",
+                transform=ax.transAxes,
+            )
+        if hint_ylo:
+            ax.scatter(
+                0,
+                0,
+                _marker_size,
+                marker=align_marker("v", valign="top", halign="left"),
+                edgecolor="black",
+                zorder=5,
+                clip_on=False,
+                facecolor="white",
+                transform=ax.transAxes,
+            )
+        if hint_yhi:
+            ax.scatter(
+                0,
+                1,
+                _marker_size,
+                marker=align_marker("^", valign="bottom"),
+                edgecolor="black",
+                zorder=5,
+                clip_on=False,
+                facecolor="white",
+                transform=ax.transAxes,
+            )
+
+    _labels: np.ndarray | None = None
+    if isinstance(labels, bool):
+        _labels = H if labels else None
+    elif np.iterable(labels):
+        label_array = np.asarray(labels).T
+        if H.shape == label_array.shape:
+            _labels = label_array
         else:
-            window = None
-
-        if just_window and window is None:
-            continue
-
-        fill_mask = valid.select(dim, i)
-
-        slice_pred_mean = pred_mean.select(dim, i)
-        slice_pred_var = pred_variance.select(dim, i)
-
-        slice_obs_mean = test_mean.select(dim, i)
-        slice_obs_var = test_variance.select(dim, i)
-        fig, ax = plt.subplots()
-        generatePulls(
-            ax,
-            (bin_edges[1 - dim], slice_obs_mean, slice_obs_var),
-            (slice_pred_mean, slice_pred_var),
-            observed_title=observed_title,
-            mask=fill_mask,
-            domain=domain,
+            raise ValueError(
+                f"Labels input has incorrect shape (expect: {H.shape}, got: {label_array.shape})"
+            )
+    elif labels is not None:
+        raise ValueError(
+            "Labels not understood, either specify a bool or a Hist-like array"
         )
 
-        if window:
-            ax.axvline(window[0], color="red", linewidth=0.3, linestyle="-.")
-            ax.axvline(window[1], color="red", linewidth=0.3, linestyle="-.")
+    text_artists = []
+    if _labels is not None:
+        if (pccmap := pc.cmap) is None:
+            raise ValueError("No colormap found.")
+        for ix, xc in enumerate(xbin_centers):
+            for iy, yc in enumerate(ybin_centers):
+                normedh = pc.norm(H[iy, ix])
+                color = "black" if isLight(pccmap(normedh)[:-1]) else "lightgrey"
+                text_artists.append(
+                    ax.text(
+                        xc, yc, _labels[iy, ix], ha="center", va="center", color=color
+                    )
+                )
 
-            ax.bottom_axes[0].axvline(
-                window[0], color="red", linewidth=0.3, linestyle="-."
-            )
-            ax.bottom_axes[0].axvline(
-                window[1], color="red", linewidth=0.3, linestyle="-."
-            )
-        plotting.addEra(ax, "59.83")
-        plotting.addPrelim(ax)
-        plotting.addText(
-            ax,
-            0.98,
-            0.5,
-            f"Val={round(float(val),2)}",
-            horizontalalignment="right",
-            verticalalignment="bottom",
-        )
-        ax.bottom_axes[0].set_ylabel(r"$\frac{obs - pred}{\sigma_{o}}$")
-        ax.legend()
-        yield val, fig, ax
+    return ColormeshArtists(pc, cb_obj, text_artists)
 
 
-def simpleGrid(ax, edges, inx, iny, cmap="viridis", **kwargs):
-    def addColorbar(ax, vals):
-        divider = make_axes_locatable(ax)
-        cax = divider.append_axes("right", size="5%", pad=0.05)
-        cbar = plt.colorbar(vals, cax=cax)
-        cax.get_yaxis().set_offset_position("left")
-        ax.cax = cax
 
-    X, Y = np.meshgrid(*edges)
-    z = iny
-    Z, filled = pointsToGrid(inx, iny, edges)
-    Z = Z.hist.T
-    filled = filled.T
-    Z = np.ma.masked_where(~filled, Z)
-    f = ax.pcolormesh(X, Y, Z, cmap=mpl.colormaps[cmap], **kwargs)
-    addColorbar(ax, f)
-    return f
+def plotRaw(ax, e, x, y, var=None, **kwargs):
+    h = dataToHist(x, y, e, V=var)
+    if len(e) == 1:
+        DROP_KWARGS = {"cmin", "cmax", "cmap"}
+        kwargs = {x:y for x,y in kwargs.items() if x not in DROP_KWARGS}
+        return mplhep.histplot(h, ax=ax,  **kwargs)
+    elif len(e) == 2:
+        return hist2dplot(h, ax=ax, flow=None, **kwargs)
 
 
-def plotHist(ax, edges, vals):
-    def addColorbar(ax, vals):
-        divider = make_axes_locatable(ax)
-        cax = divider.append_axes("right", size="5%", pad=0.05)
-        cbar = plt.colorbar(vals, cax=cax)
-        cax.get_yaxis().set_offset_position("left")
-        ax.cax = cax
-
-    X, Y = np.meshgrid(*edges)
-    Z = vals
-    Z = np.ma.masked_where(~filled, Z)
-    f = ax.pcolormesh(X, Y, Z)
-    addColorbar(ax, f)
-    return f
+def plotData(ax, data, **kwargs):
+    return plotRaw(ax, data.E, data.X, data.Y, var=data.V, **kwargs)

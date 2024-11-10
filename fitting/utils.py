@@ -1,11 +1,42 @@
 import linear_operator
 import torch
+from uhi.numpy_plottable import NumPyPlottableHistogram
+import numpy as np
 
 
-def chi2Bins(obs,exp,var, mask=None):
+def pointsToGrid(points_x, points_y, edges, set_unfilled=None):
+    if len(edges) > 1:
+        filled = torch.histogramdd(
+            points_x, bins=edges, weight=torch.full_like(points_y, True)
+        )
+        ret = torch.histogramdd(points_x, bins=edges, weight=points_y)
+        return ret, filled.hist.bool()
+    else:
+        filled = torch.histogram(
+            points_x, bins=edges[0], weight=torch.full_like(points_y, True)
+        )
+        ret = torch.histogram(points_x, bins=edges[0], weight=points_y)
+        return ret, filled.hist.bool()
+
+
+def dataToHist(X,Y,E,V=None):
+    Z, filled = pointsToGrid(X, Y, E)
+    Z = np.where(filled.numpy(),  Z.hist.numpy(), np.nan)
+    if V is not None:
+        V, filled = pointsToGrid(X, V, E)
+        V = np.where(filled.numpy(),  V.hist.numpy(), np.nan)
+
+    return NumPyPlottableHistogram(
+        Z,
+        *tuple(x.numpy() for x in E),
+        variances=V
+    )
+
+
+def chi2Bins(obs, exp, var, mask=None):
     if mask is not None:
-        obs,exp,var = obs[mask],exp[mask],var[mask]
-    return torch.sum((obs-exp).pow(2) / var) / obs.size(0)
+        obs, exp, var = obs[mask], exp[mask], var[mask]
+    return torch.sum((obs - exp).pow(2) / var) / obs.size(0)
 
 
 def fixMVN(mvn):
@@ -27,13 +58,6 @@ def affineTransformMVN(mvn, slope, intercept):
     return ret
 
 
-def pointsToGrid(points_x, points_y, edges, set_unfilled=None):
-    filled = torch.histogramdd(
-        points_x, bins=edges, weight=torch.full_like(points_y, True)
-    )
-    ret = torch.histogramdd(points_x, bins=edges, weight=points_y)
-    return ret, filled.hist.bool()
-
 def getScaledEigenvecs(cov_mat, top=None):
     linear_operator.utils.cholesky.psd_safe_cholesky(cov_mat)
     vals, vecs = torch.linalg.eigh(cov_mat)
@@ -53,5 +77,4 @@ def getScaledEigenvecs(cov_mat, top=None):
         eva = vals
         eve = vecs
 
-    ret = eva * eve.T
-    return ret
+    return eva, eve

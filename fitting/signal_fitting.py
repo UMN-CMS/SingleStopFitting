@@ -1,9 +1,6 @@
 import pyro
 import pyro.distributions as dist
-import pyro.infer.reparam as pir
 import torch
-from pyro.infer import HMC, MCMC, NUTS, SVI, Predictive, Trace_ELBO
-from pyro.infer.autoguide import AutoDelta, AutoDiagonalNormal, AutoMultivariateNormal
 
 
 def simpleSignalModel(signal_locs, signal_data=None):
