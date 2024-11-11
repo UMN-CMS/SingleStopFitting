@@ -1,5 +1,6 @@
 import linear_operator
 import torch
+import gpytorch
 from uhi.numpy_plottable import NumPyPlottableHistogram
 import numpy as np
 
@@ -78,3 +79,18 @@ def getScaledEigenvecs(cov_mat, top=None):
         eve = vecs
 
     return eva, eve
+
+def modelToPredMVN(model, likelihood, data, slope=None, intercept=None):
+    with torch.no_grad():
+        pred_dist = model(data.X)
+    with gpytorch.settings.cholesky_max_tries(30):
+        psd_pred_dist = fixMVN(pred_dist)
+    if slope is not None and intercept is not None:
+        pred_dist = affineTransformMVN(psd_pred_dist, slope, intercept)
+    else:
+        pred_dist = type(pred_dist)(
+            psd_pred_dist.mean,
+            psd_pred_dist.covariance_matrix.to_dense(),
+        )
+
+    return pred_dist

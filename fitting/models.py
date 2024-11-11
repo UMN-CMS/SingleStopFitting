@@ -442,8 +442,8 @@ def wrapNN(cls_name, kernel):
         def init_weights(m):
             if isinstance(m, torch.nn.Linear):
                 torch.nn.init.xavier_uniform_(m.weight)
-        self.apply(init_weights)
 
+        self.apply(init_weights)
 
     def forward(self, x1, x2, **params):
         # x1_, x2_ = (
@@ -560,13 +560,14 @@ NNMaternKernel = wrapNN("NNMaternKernel", gpytorch.kernels.MaternKernel)
 class RBFLayer(torch.nn.Module):
     def __init__(self, dim, count):
         super().__init__()
-        self.length_scales = torch.nn.Parameter(torch.rand(count, dim)+0.01 )
+        self.length_scales = torch.nn.Parameter(torch.rand(count, dim) + 0.01)
         self.centers = torch.nn.Parameter(torch.rand(count, dim))
 
     def forward(self, vals):
         return torch.exp(
-            -((torch.unsqueeze(vals, 1) - self.centers)
-            / (2 * self.length_scales)).pow(2).sum(-1)
+            -((torch.unsqueeze(vals, 1) - self.centers) / (2 * self.length_scales))
+            .pow(2)
+            .sum(-1)
         )
 
 
@@ -576,9 +577,7 @@ class NonStatKernel(gpytorch.kernels.RBFKernel):
     def __init__(self, dim=2, count=4, **kwargs):
         super().__init__(**kwargs)
         self.pre_transform = RBFLayer(dim, count)
-        # self.pre_transform = Linear(dim, count)
         self.trans = torch.nn.Linear(count, 1, bias=False)
-        #self.trans=LargeFeatureExtractor(idim=count, layer_sizes=(2,2), odim=1)
 
     def forward(self, x1, x2, diag=False, **params):
         # for m,p in self.named_parameters():
@@ -595,25 +594,58 @@ class NonStatKernel(gpytorch.kernels.RBFKernel):
         return o * r
 
 
-class NonStatGP(gpytorch.models.ExactGP):
+class NonStatParametric(gpytorch.models.ExactGP):
     def __init__(self, train_x, train_y, likelihood, function=None):
         super().__init__(train_x, train_y, likelihood)
         self.mean_module = gpytorch.means.ConstantMean()
+        self.base_covar_module = (
+            NonStatKernel(ard_num_dims=2)
+            + NonStatKernel(ard_num_dims=2)
+            + gpytorch.kernels.ScaleKernel(gpytorch.kernels.RBFKernel(ard_num_dims=2))
+        )
+        self.covar_module = gpytorch.kernels.InducingPointKernel(
+            self.base_covar_module,
+            likelihood=likelihood,
+            inducing_points=train_x[::4].clone(),
+        )
 
-        self.base_covar_module = NonStatKernel(
-            ard_num_dims=2
-        )  # * NonStatKernel(ard_num_dims=2)
-        if False:
-            self.covar_module = self.base_covar_module
-        else:
-            self.covar_module = gpytorch.kernels.InducingPointKernel(
-                self.base_covar_module,
-                likelihood=likelihood,
-                inducing_points=train_x[::2].clone(),
-            )
+        self.covar_module.inducing_points.requires_grad_(False)
 
-    # self.covar_module = SK(NonStatKernel(ard_num_dims=2))
     def forward(self, x):
         mean_x = self.mean_module(x)
         covar_x = self.covar_module(x)
+        return gpytorch.distributions.MultivariateNormal(mean_x, covar_x)
+
+
+class MyNNRBFModel(gpytorch.models.ExactGP):
+    def __init__(self, train_x, train_y, likelihood):
+        super().__init__(train_x, train_y, likelihood)
+        self.feature_extractor = LargeFeatureExtractor(
+            odim=2, idim=2, layer_sizes=(50, 50, 10)
+        )
+        self.scale_to_bounds = gpytorch.utils.grid.ScaleToBounds(-1.0, 1.0)
+
+        self.mean_module = gpytorch.means.ConstantMean()
+        self.base_covar_module = gpytorch.kernels.ScaleKernel(
+            gpytorch.kernels.RBFKernel(ard_num_dims=2)
+        )
+        self.covar_module = gpytorch.kernels.InducingPointKernel(
+            self.base_covar_module,
+            likelihood=likelihood,
+            inducing_points=train_x[::4].clone(),
+        )
+
+        def init_weights(m):
+            if isinstance(m, torch.nn.Linear):
+                torch.nn.init.xavier_uniform_(m.weight)
+
+        self.covar_module.inducing_points.requires_grad_(False)
+
+        self.apply(init_weights)
+
+    def forward(self, x):
+        x = self.feature_extractor(x)
+        x = self.scale_to_bounds(x)
+        covar_x = self.covar_module(x)
+        mean_x = self.mean_module(x)
         return gpytorch.distributions.MultivariateNormal(mean_x, covar_x)

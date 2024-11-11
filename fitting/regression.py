@@ -20,6 +20,9 @@ class DataValues:
     V: torch.Tensor
     E: torch.Tensor
 
+    def getMasked(self, mask):
+        return DataValues(self.X[mask], self.Y[mask], self.V[mask], self.E)
+
     def toGpu(self):
         return DataValues(self.X.cuda(), self.Y.cuda(), self.V.cuda(), self.E)
 
@@ -31,7 +34,7 @@ class DataValues:
         return len(self.E)
 
     def toHist(self):
-        return dataToHist(self.X,self.Y,self.E,self.V)
+        return dataToHist(self.X, self.Y, self.E, self.V)
 
 
 def makeRegressionData(
@@ -53,7 +56,7 @@ def makeRegressionData(
     if len(edges) == 2:
         bin_values = bin_values.T
         bin_vars = bin_vars.T
-        
+
     centers_grid = torch.meshgrid(*centers, indexing="xy")
     if exclude_less:
         domain_mask = bin_values < exclude_less
@@ -195,12 +198,6 @@ def optimizeHyperparams(
         return model, likelihood, evidence
     else:
         return model, likelihood
-
-
-def getPrediction(model, likelihood, test_data):
-    with torch.no_grad():
-        observed_pred = model(test_data.X)
-    return observed_pred
 
 
 def getBlindedMask(inputs, mask_func):

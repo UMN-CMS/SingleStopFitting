@@ -7,13 +7,13 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-import fitting.utils as fit_utils
+import numpy as np
+
 import gpytorch
 import hist
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 import mplhep
-import numpy as np
 import torch
 from gpytorch.kernels import ScaleKernel as SK
 from rich import print
@@ -22,7 +22,7 @@ from . import models, regression, transformations, windowing
 from .blinder import makeWindow2D, windowPlot2D
 from .plots import makeDiagnosticPlots, makeNNPlots
 from .predictive import makePosteriorPred
-from .utils import chi2Bins
+from .utils import chi2Bins, modelToPredMVN
 
 torch.set_default_dtype(torch.float64)
 torch.manual_seed(12345)
@@ -32,28 +32,6 @@ np.random.seed(12345)
 
 logger = logging.getLogger(__name__)
 
-
-@dataclass
-class RegressionModel:
-    input_data: hist.Hist
-    window: Any
-    domain_mask: torch.Tensor
-
-    train_data: torch.Tensor
-    test_data: torch.Tensor
-
-    trained_model: gpytorch.models.ExactGP
-
-    raw_posterior_dist: gpytorch.distributions.MultivariateNormal
-    posterior_dist: gpytorch.distributions.MultivariateNormal
-
-
-@dataclass
-class SignalData:
-    signal_data: torch.Tensor
-    domain_mask: torch.Tensor = None
-    signal_hist: hist.Hist = None
-    signal_name: str = None
 
 
 def saveDiagnosticPlots(plots, save_dir):
@@ -70,24 +48,10 @@ def bumpCut(X, Y):
     return m
 
 
-def makePostModel(model, likelihood, data, slope=None, intercept=None):
-    pred_dist = regression.getPrediction(model, likelihood, data)
-    with gpytorch.settings.cholesky_max_tries(30):
-        psd_pred_dist = fit_utils.fixMVN(pred_dist)
-
-    if slope is not None and intercept is not None:
-        pred_dist = fit_utils.affineTransformMVN(psd_pred_dist, slope, intercept)
-    else:
-        pred_dist = type(pred_dist)(
-            psd_pred_dist.mean,
-            psd_pred_dist.covariance_matrix.to_dense(),
-        )
-
-    return pred_dist
-
-
 def makePostData(model, likelihood, data, base_data, slope=None, intercept=None):
-    pred_dist = makePostModel(model, likelihood, data, slope=slope, intercept=intercept)
+    pred_dist = modelToPredMVN(
+        model, likelihood, data, slope=slope, intercept=intercept
+    )
 
     return regression.DataValues(
         base_data.X, pred_dist.mean, pred_dist.variance, base_data.E
@@ -117,20 +81,18 @@ def histToData(inhist, window_func, min_counts=10):
 def doCompleteRegression(
     inhist,
     window_func,
-    kernel=None,
-    model_maker=None,
+    model_class=None,
     save_dir="plots",
     mean=None,
     just_model=False,
     use_cuda=True,
-    min_counts=50,
+    min_counts=0,
 ):
 
     train_data, test_data, domain_mask = histToData(inhist, window_func)
     train_transform = transformations.getNormalizationTransform(train_data)
     normalized_train_data = train_transform.transform(train_data)
     normalized_test_data = train_transform.transform(test_data)
-    print(normalized_test_data)
 
     if torch.cuda.is_available() and use_cuda:
         train = normalized_train_data.toGpu()
@@ -142,16 +104,12 @@ def doCompleteRegression(
 
     lr = 0.05
 
-    ok = False
-    model, likelihood = regression.createModel(
-        train,
-        kernel=kernel,
-        model_maker=model_maker,
-        learn_noise=False,
+    likelihood = gpytorch.likelihoods.FixedNoiseGaussianLikelihood(
+        noise=train.V,
+        learn_additional_noise=False,
+        noise_constraint=gpytorch.constraints.GreaterThan(1e-10),
     )
-
-    print(model)
-
+    model = model_class(train.X, train.Y, likelihood)
     if torch.cuda.is_available() and use_cuda:
         model = model.cuda()
         likelihood = likelihood.cuda()
@@ -176,26 +134,27 @@ def doCompleteRegression(
         likelihood,
         train,
         bar=False,
-        iterations=150,
+        iterations=250,
         lr=lr,
         get_evidence=True,
         chi2mask=train_data.Y > min_counts,
         val=validate,
     )
+
     if torch.cuda.is_available() and use_cuda:
         model = model.cpu()
         likelihood = likelihood.cpu()
 
     model.eval()
     likelihood.eval()
-    logger.info("Done with loop")
-    print("Done with loop")
 
     slope = train_transform.transform_y.slope
     intercept = train_transform.transform_y.intercept
 
-    raw_pred_dist = makePostModel(model, likelihood, normalized_train_data)
-    pred_dist = makePostModel(model, likelihood, normalized_test_data, slope, intercept)
+    # raw_pred_dist = modelToPredMVN(model, likelihood, normalized_train_data)
+    pred_dist = modelToPredMVN(
+        model, likelihood, normalized_test_data, slope, intercept
+    )
 
     train_pred_data = makePostData(
         model, likelihood, normalized_train_data, train_data, slope, intercept
@@ -265,23 +224,21 @@ def doCompleteRegression(
         diagnostic_plots.update(makeNNPlots(model, test_data))
         print("Saving NN")
     except AttributeError as e:
-        print(e)
+        pass
     saveDiagnosticPlots(diagnostic_plots, save_dir)
 
     model_dict = model.state_dict()
-    save_data = RegressionModel(
+    save_data = dict(
+        model_name=type(model).__name__,
         input_data=inhist,
-        window=window_func,
         domain_mask=domain_mask,
-        train_data=train_data,
-        test_data=test_data,
-        trained_model=model,
-        raw_posterior_dist=raw_pred_dist,
-        posterior_dist=pred_dist,
+        blind_mask=mask,
+        transform=train_transform,
+        model_dict=model.state_dict(),
     )
+
     torch.save(save_data, save_dir / "train_model.pth")
-    torch.save(model_dict, save_dir / "model_dict.pth")
-    torch.save(pred_dist, save_dir / "posterior_latent.pth")
+
     with open(save_dir / "info.json", "w") as f:
         json.dump(data, f)
     return save_data
@@ -291,9 +248,7 @@ def doRegressionForSignal(
     signal_name,
     signal_hist,
     bkg_hist,
-    kernel,
     save_dir,
-    kernel_name="",
     signal_injections=None,
     mean=None,
 ):
@@ -302,26 +257,17 @@ def doRegressionForSignal(
     inducing_ratio = 4
     signal_injections = signal_injections or [0.0, 1.0, 4.0, 16.0]
 
-    def mm(train_x, train_y, likelihood, kernel, **kwargs):
-        # return models.ExactAnyKernelModel(
-        #     train_x, train_y, likelihood, kernel=kernel, **kwargs
-        # )
-        c = models.InducingPointModel(
-            train_x,
-            train_y,
-            likelihood,
-            kernel,
-            inducing=train_x[::inducing_ratio],
-            **kwargs,
-        )
-        # c.covar_module.inducing_points.requires_grad_(False)
-        return c
-        # return GPRegressionModel(train_x, train_y, likelihood, LargeFeatureExtractor())
-
     if signal_hist:
         signal_regression_data, *_ = regression.makeRegressionData(signal_hist)
         window = makeWindow2D(signal_regression_data, frac=0.3)
-        sd = SignalData(signal_regression_data, None, signal_hist, signal_name)
+        if window is None:
+            print(f"COULD NOT FIND VALID WINDOW FOR SIGNAL {signal_name}")
+            return
+        sd = dict(
+            signal_data=signal_regression_data,
+            signal_hist=signal_hist,
+            signal_name=signal_name,
+        )
     else:
         window = None
 
@@ -337,16 +283,14 @@ def doRegressionForSignal(
         print(f"Injecting background with signals strength {round(r,3)}")
         save_dir = sig_dir / f"inject_r_{str(round(r,3)).replace('.','p')}"
         save_dir.mkdir(exist_ok=True, parents=True)
-        print(signal_hist)
-        print(bkg_hist)
         to_estimate = bkg_hist + r * signal_hist
 
         d = doCompleteRegression(
             to_estimate,
             window,
             save_dir=save_dir,
-            model_maker=mm,
-            kernel=kernel,
+            model_class=models.NonStatParametric,
+            # model_class=models.MyNNRBFModel,
             mean=mean,
         )
         plt.close("all")
@@ -355,22 +299,20 @@ def doRegressionForSignal(
 def doEstimationForSignals(
     signals,
     bkg_hist,
-    kernel,
     base_dir,
-    kernel_name="",
     signal_injections=None,
     mean=None,
 ):
-    base_dir = Path(base_dir) 
+    base_dir = Path(base_dir)
     for signal_name, signal_hist in signals:
         doRegressionForSignal(
             signal_name,
             signal_hist,
             bkg_hist,
-            kernel,
             base_dir,
-            kernel_name=kernel_name,
             mean=mean,
+            # signal_injections=[0.0, 0.5, 1.0, 4.0, 16.0],
+            signal_injections=[0.0],
         )
 
         plt.close("all")
@@ -395,19 +337,35 @@ def getHists2D(fit_region, scale=1.0):
     bkg_hist = bkg_hist[fit_region] * scale
 
     signal_hist_names = [
-        "signal_312_1200_400",
-        "signal_312_1200_800",
+        "signal_312_1000_600",
+        "signal_312_1300_600",
+        "signal_312_2000_1700",
         "signal_312_1500_400",
         "signal_312_1500_600",
-        # "signal_312_2000_1200",
-        # "signal_312_1500_1000",
-        # "signal_312_2000_900",
-        # "signal_312_1000_400",
-        # "signal_312_1200_600",
+        "signal_312_1500_100",
+        "signal_312_2000_400",
+        "signal_312_1000_400",
+        "signal_312_1500_1000",
+        "signal_312_1300_400",
+        "signal_312_1200_600",
+        "signal_312_1200_400",
+        "signal_312_1200_700",
+        "signal_312_2000_1200",
+        "signal_312_1200_800",
+        "signal_312_1500_900",
+        "signal_312_1400_400",
+        "signal_312_2000_1600",
+        "signal_312_2000_900",
+        "signal_312_1000_700",
     ]
 
     signals_to_scan = [
-        (sn, signal312[sn, "Signal312"]["hist_collection"]["histogram"]["central", ...][fit_region])
+        (
+            sn,
+            signal312[sn, "Signal312"]["hist_collection"]["histogram"]["central", ...][
+                fit_region
+            ],
+        )
         for sn in signal_hist_names
     ]
 
@@ -431,7 +389,6 @@ def getHists1D(fit_regions, scale=1.0):
 
     bkg_hist = control["Data2018", "Control"]["hist_collection"]["histogram"]
     bkg_hist = bkg_hist[fit_region] * scale
-
 
     # signal_hist_names = [
     #     "signal_312_1200_400",
@@ -457,53 +414,21 @@ def getHists1D(fit_regions, scale=1.0):
     return bkg_hist, signals_to_scan
 
 
-def fit(path, kernel, kernel_name, fit_region, mc_hist=None):
+def fit(path, fit_region, mc_hist=None):
     bkg_hist, signals_to_scan = getHists2D(fit_region, scale=0.1)
-
-    p = Path(path)
-
-    doEstimationForSignals(
-        signals_to_scan,
-        bkg_hist,
-        kernel,
-        p / kernel_name,
-        kernel_name=kernel_name,
-        mean=mc_hist,
-    )
-
-
-kernels = {
-    "dkl_50_50_10": SK(models.NNRBFKernel(odim=2, layer_sizes=(50, 50, 10)))
-    # "mykernel": models.NNSMKernel(num_mixtures=4, odim=2, layer_sizes=(4,)),
-}
+    doEstimationForSignals(signals_to_scan, bkg_hist, path, mean=mc_hist)
 
 
 def main():
     mpl.use("Agg")
     mplhep.style.use("CMS")
-    # kname, kernel = "smkdkl", models.NNSMKernel(
-    #     num_mixtures=4, idim=1, odim=1, layer_sizes=(4,4)
-    # )
-    # kname, kernel = "smk", gpytorch.kernels.SpectralMixtureKernel(num_mixtures=2)
-
-    # kname, kernel = "rbf", SK(gpytorch.kernels.RBFKernel())
-    # kname, kernel = "rbf", SK(gpytorch.kernels.RBFKernel(ard_num_dims=2))
-    # kname, kernel = "smkdkl", models.NNSMKernel(num_mixtures=3, odim=2, layer_sizes=(8,5,3))
     kname, kernel = "para", SK(
         gpytorch.kernels.RBFKernel(ard_num_dims=2)
     ) + models.NonStatKernel(
         dim=2, count=4
     )  # + models.NonStatKernel(dim=2, count=4)
-
-    # kname, kernel = "dkl_25_15_10", SK(models.NNRBFKernel(odim=2, layer_sizes=(25, 15, 10)))
-    # kname, kernel = "dkl_50_10", SK(models.NNRBFKernel(odim=2, layer_sizes=(50, 10)))
-    # kname, kernel = "dkl_50_50_10", SK(models.NNRBFKernel(odim=2, layer_sizes=(50, 50, 10)))
-    # kname, kernel = "dkl_8", SK(models.NNRBFKernel(odim=2, idim=2, layer_sizes=(8,4)))
-    # kname, kernel = "dkl_4_4", SK(models.NNRBFKernel(odim=1, idim=1, layer_sizes=(4,4)))
     fit(
         "allscans/control_reduced",
-        kernel,
-        kname,
         (slice(hist.loc(900), None), slice(hist.loc(0.25), None)),
     )
     # fit("allscans/control", kernel, kname, (slice(None), slice(None)))
