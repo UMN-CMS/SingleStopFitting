@@ -48,8 +48,9 @@ def createHists(obs, pred, signal_data, root_file, sig_percent=0.0):
     return nz
 
 
-def createDatacard(obs, pred, signal_data, output_dir):
+def createDatacard(obs, pred, signal_data, output_dir, signal_meta=None):
     print(f"Generating combine datacard in {output_dir}")
+    signal_meta = signal_meta or {}
     output_dir = Path(output_dir)
     output_dir.mkdir(exist_ok=True, parents=True)
     root_path = output_dir / "histograms.root"
@@ -89,6 +90,11 @@ def createDatacard(obs, pred, signal_data, output_dir):
 
     with open(output_dir / "datacard.txt", "w") as f:
         f.write(card.dumps())
+
+    metadata = {"signal_metadata" : signal_meta }
+
+    with open(output_dir / "metadata.json") as f:
+        f.write(json.dumps(metadata))
 
 
 def getPrediction(bkg_data):
@@ -146,7 +152,10 @@ def main():
         sig_data = torch.load(signal_data_path)  # , weights_only=True)
         bkg_data = torch.load(est_data_path)
         obs, pred = getPrediction(bkg_data)
-        createDatacard(obs, pred, sig_data["signal_data"], out_dir / signal_name / "inject_r_0p0") 
+        _, coupling ,mt, mx = signal_name.split("_")
+        mt,mx = int(mt), int(mx)
+        signal_metadata = dict(name=signal_name, coupling=coupling, mass_stop = mt, mass_chargino=mx)
+        createDatacard(obs, pred, sig_data["signal_data"], out_dir / signal_name / "inject_r_0p0", signal_meta=signal_metadata) 
 
 
 if __name__ == "__main__":
