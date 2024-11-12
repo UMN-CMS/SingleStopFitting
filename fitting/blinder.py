@@ -51,9 +51,9 @@ def makeWindow1D(signal_data, frac=0.68):
 def windowPlot1D(signal_data, window, frac=None):
     fig, ax = plt.subplots()
     plotData(ax, signal_data)
-    if bounds[0]:
+    if window.center - window.axes/2:
         ax.axvline(window.center - window.axes, 0, 1, color="black")
-    if bounds[1]:
+    if window.center + window.axes/2:
         ax.axvline(window.center + window.axes, 0, 1, color="black")
     return fig, ax
 

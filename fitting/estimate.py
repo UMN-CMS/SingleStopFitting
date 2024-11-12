@@ -19,7 +19,7 @@ from gpytorch.kernels import ScaleKernel as SK
 from rich import print
 
 from . import models, regression, transformations, windowing
-from .blinder import makeWindow2D, windowPlot2D
+from .blinder import makeWindow1D, makeWindow2D, windowPlot1D, windowPlot2D
 from .plots import makeDiagnosticPlots, makeNNPlots
 from .predictive import makePosteriorPred
 from .utils import chi2Bins, modelToPredMVN
@@ -31,7 +31,6 @@ np.random.seed(12345)
 
 
 logger = logging.getLogger(__name__)
-
 
 
 def saveDiagnosticPlots(plots, save_dir):
@@ -58,11 +57,11 @@ def makePostData(model, likelihood, data, base_data, slope=None, intercept=None)
     )
 
 
-def histToData(inhist, window_func, min_counts=10):
+def histToData(inhist, window_func, min_counts=10, domain_mask_cut=None):
     train_data, window_mask, *_ = regression.makeRegressionData(
         inhist,
         window_func,
-        domain_mask_function=bumpCut,
+        domain_mask_function=domain_mask_cut,
         exclude_less=min_counts,
         get_mask=True,
     )
@@ -71,7 +70,7 @@ def histToData(inhist, window_func, min_counts=10):
         None,
         get_mask=True,
         get_shaped_mask=True,
-        domain_mask_function=bumpCut,
+        domain_mask_function=domain_mask_cut,
         exclude_less=min_counts,
     )
     s = 1.0
@@ -87,9 +86,12 @@ def doCompleteRegression(
     just_model=False,
     use_cuda=True,
     min_counts=0,
+    domain_mask_function=None,
 ):
 
-    train_data, test_data, domain_mask = histToData(inhist, window_func)
+    train_data, test_data, domain_mask = histToData(
+        inhist, window_func, domain_mask_cut=domain_mask_function
+    )
     train_transform = transformations.getNormalizationTransform(train_data)
     normalized_train_data = train_transform.transform(train_data)
     normalized_test_data = train_transform.transform(test_data)
@@ -206,16 +208,19 @@ def doCompleteRegression(
 
     save_dir = Path(save_dir)
     save_dir.mkdir(exist_ok=True, parents=True)
-    diagnostic_plots = makeDiagnosticPlots(
-        test_pred_data,
-        test_data,
-        train_data,
-        mask,
-        inducing_points=train_transform.transform_x.iTransformData(
-            model.covar_module.inducing_points
+    if hasattr(model.covar_module, "inducing_points"):
+        ind = (
+            train_transform.transform_x.iTransformData(
+                model.covar_module.inducing_points
+            )
+            .detach()
+            .numpy()
         )
-        .detach()
-        .numpy(),
+    else:
+        ind = None
+
+    diagnostic_plots = makeDiagnosticPlots(
+        test_pred_data, test_data, train_data, mask, inducing_points=ind
     )
     p, d = makePosteriorPred(pred_dist, test_data, mask)
     diagnostic_plots.update(p)
@@ -257,9 +262,15 @@ def doRegressionForSignal(
     inducing_ratio = 4
     signal_injections = signal_injections or [0.0, 1.0, 4.0, 16.0]
 
+    dim = len(bkg_hist.axes)
+
     if signal_hist:
         signal_regression_data, *_ = regression.makeRegressionData(signal_hist)
-        window = makeWindow2D(signal_regression_data, frac=0.3)
+        if dim == 2:
+            window = makeWindow2D(signal_regression_data, frac=0.3)
+        elif dim == 1:
+            window = makeWindow1D(signal_regression_data, frac=0.6)
+
         if window is None:
             print(f"COULD NOT FIND VALID WINDOW FOR SIGNAL {signal_name}")
             return
@@ -275,23 +286,36 @@ def doRegressionForSignal(
     sig_dir.mkdir(exist_ok=True, parents=True)
     if signal_hist:
         torch.save(sd, sig_dir / "signal_data.pth")
-        fig, ax = windowPlot2D(signal_regression_data, window)
+        if dim == 1:
+            fig, ax = windowPlot1D(signal_regression_data, window)
+        else:
+            fig, ax = windowPlot2D(signal_regression_data, window)
         fig.savefig(sig_dir / f"{signal_name}.pdf")
+
+    if dim == 1:
+        model = models.NonStatParametric1D
+    else:
+        model = models.NonStatParametric2D
+
+    print(model)
 
     for r in signal_injections:
         print(f"Performing estimation for signal {signal_name}.")
         print(f"Injecting background with signals strength {round(r,3)}")
         save_dir = sig_dir / f"inject_r_{str(round(r,3)).replace('.','p')}"
         save_dir.mkdir(exist_ok=True, parents=True)
-        to_estimate = bkg_hist + r * signal_hist
+        if signal_hist is not None:
+            to_estimate = bkg_hist + r * signal_hist
+        else:
+            to_estimate = bkg_hist
 
         d = doCompleteRegression(
             to_estimate,
             window,
             save_dir=save_dir,
-            model_class=models.NonStatParametric,
-            # model_class=models.MyNNRBFModel,
+            model_class=model,
             mean=mean,
+            domain_mask_function=None if dim == 2 else None,
         )
         plt.close("all")
 
@@ -337,28 +361,33 @@ def getHists2D(fit_region, scale=1.0):
     bkg_hist = bkg_hist[fit_region] * scale
 
     signal_hist_names = [
-        "signal_312_1000_600",
-        "signal_312_1300_600",
-        "signal_312_2000_1700",
-        "signal_312_1500_400",
         "signal_312_1500_600",
-        "signal_312_1500_100",
-        "signal_312_2000_400",
-        "signal_312_1000_400",
-        "signal_312_1500_1000",
-        "signal_312_1300_400",
-        "signal_312_1200_600",
-        "signal_312_1200_400",
-        "signal_312_1200_700",
-        "signal_312_2000_1200",
-        "signal_312_1200_800",
-        "signal_312_1500_900",
-        "signal_312_1400_400",
-        "signal_312_2000_1600",
-        "signal_312_2000_900",
-        "signal_312_1000_700",
+        # "signal_312_1000_600",
+        # "signal_312_1300_600",
+        # "signal_312_2000_1700",
+        # "signal_312_1500_400",
+        # "signal_312_1500_100",
+        # "signal_312_2000_400",
+        # "signal_312_1000_400",
+        # "signal_312_1500_1000",
+        # "signal_312_1300_400",
+        # "signal_312_1200_600",
+        # "signal_312_1200_400",
+        # "signal_312_1200_700",
+        # "signal_312_2000_1200",
+        # "signal_312_1200_800",
+        # "signal_312_1500_900",
+        # "signal_312_1400_400",
+        # "signal_312_2000_1600",
+        # "signal_312_2000_900",
+        # "signal_312_1000_700",
     ]
 
+    # signal_hist_names = [
+    #     "signal_312_1200_1100",
+    #     "signal_312_1500_1400",
+    #     "signal_312_2000_1900",
+    # ]
     signals_to_scan = [
         (
             sn,
@@ -372,15 +401,15 @@ def getHists2D(fit_region, scale=1.0):
     return bkg_hist, signals_to_scan
 
 
-def getHists1D(fit_regions, scale=1.0):
+def getHists2DCompressed(fit_region, scale=1.0):
     with open(
-        "regression_results/2018_Signal312_m14_m.pkl",
+        "regression_results/2018_Signal312_nn_comp_0p67_m14_vs_mChiComp.pkl",
         "rb",
     ) as f:
         signal312 = pkl.load(f)
 
     with open(
-        "regression_results/2018_Control_m14_m.pkl",
+        "regression_results/2018_Control_nn_comp_0p67_m14_vs_mChiComp.pkl",
         "rb",
     ) as f:
         control = pkl.load(f)
@@ -388,6 +417,54 @@ def getHists1D(fit_regions, scale=1.0):
     print(signal312.keys())
 
     bkg_hist = control["Data2018", "Control"]["hist_collection"]["histogram"]
+    bkg_hist = bkg_hist[fit_region] * scale
+
+    signal_hist_names = [
+        "signal_312_1200_1100",
+        "signal_312_1500_1400",
+        "signal_312_2000_1900",
+    ]
+    signals_to_scan = [
+        (
+            sn,
+            signal312[sn, "Signal312"]["hist_collection"]["histogram"]["central", ...][
+                fit_region
+            ],
+        )
+        for sn in signal_hist_names
+    ]
+
+    return bkg_hist, signals_to_scan
+
+
+def getHists1D(fit_region, scale=1.0):
+    # with open(
+    #     "regression_results/2018_Signal312_m14_m.pkl",
+    #     "rb",
+    # ) as f:
+    #     signal312 = pkl.load(f)
+    #
+    # with open(
+    #     "regression_results/2018_Control_m14_m.pkl",
+    #     "rb",
+    # ) as f:
+    #     control = pkl.load(f)
+
+    with open(
+        "regression_results/2018_Signal312_nn_uncomp_0p67_m14_vs_mChiUncompRatio.pkl",
+        "rb",
+    ) as f:
+        signal312 = pkl.load(f)
+
+    with open(
+        "regression_results/2018_Control_nn_uncomp_0p67_m14_vs_mChiUncompRatio.pkl",
+        "rb",
+    ) as f:
+        control = pkl.load(f)
+
+    print(signal312.keys())
+
+    bkg_hist = control["Data2018", "Control"]["hist_collection"]["histogram"][:, sum]
     bkg_hist = bkg_hist[fit_region] * scale
 
     # signal_hist_names = [
@@ -405,7 +482,12 @@ def getHists1D(fit_regions, scale=1.0):
         "signal_312_2000_1900",
     ]
     signals_to_scan = [
-        (sn, signal312[sn, "Signal312"]["hist_collection"]["histogram"]["central", ...])
+        (
+            sn,
+            signal312[sn, "Signal312"]["hist_collection"]["histogram"]["central", ...][:, sum][
+                fit_region
+            ],
+        )
         for sn in signal_hist_names
     ]
     signals_to_scan.append((None, None))
@@ -415,7 +497,8 @@ def getHists1D(fit_regions, scale=1.0):
 
 
 def fit(path, fit_region, mc_hist=None):
-    bkg_hist, signals_to_scan = getHists2D(fit_region, scale=0.1)
+    bkg_hist, signals_to_scan = getHists2DCompressed(fit_region, scale=0.1)
+    # bkg_hist, signals_to_scan = getHists1D(fit_region, scale=0.1)
     doEstimationForSignals(signals_to_scan, bkg_hist, path, mean=mc_hist)
 
 
@@ -428,11 +511,11 @@ def main():
         dim=2, count=4
     )  # + models.NonStatKernel(dim=2, count=4)
     fit(
-        "allscans/control_reduced",
+        "allscans/control_reduced_2d",
         (slice(hist.loc(900), None), slice(hist.loc(0.25), None)),
     )
     # fit("allscans/control", kernel, kname, (slice(None), slice(None)))
-    # fit("allscans/control_reduced", kernel, kname, (slice(hist.loc(1000), None),))
+    # fit("allscans/control_reduced_1d", (slice(hist.loc(1100), None),))
     # fit("allscans/control", kernel, kname, (slice(None)))
 
 

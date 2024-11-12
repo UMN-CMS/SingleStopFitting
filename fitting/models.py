@@ -594,7 +594,7 @@ class NonStatKernel(gpytorch.kernels.RBFKernel):
         return o * r
 
 
-class NonStatParametric(gpytorch.models.ExactGP):
+class NonStatParametric2D(gpytorch.models.ExactGP):
     def __init__(self, train_x, train_y, likelihood, function=None):
         super().__init__(train_x, train_y, likelihood)
         self.mean_module = gpytorch.means.ConstantMean()
@@ -617,7 +617,32 @@ class NonStatParametric(gpytorch.models.ExactGP):
         return gpytorch.distributions.MultivariateNormal(mean_x, covar_x)
 
 
-class MyNNRBFModel(gpytorch.models.ExactGP):
+class NonStatParametric1D(gpytorch.models.ExactGP):
+    def __init__(self, train_x, train_y, likelihood, function=None):
+        super().__init__(train_x, train_y, likelihood)
+        self.mean_module = gpytorch.means.ConstantMean()
+        self.base_covar_module = (
+            # NonStatKernel(count=4, ard_num_dims=1, dim=1)
+            NonStatKernel(count=3, ard_num_dims=1, dim=1) +
+            gpytorch.kernels.ScaleKernel(gpytorch.kernels.RBFKernel(ard_num_dims=1))
+            # gpytorch.kernels.SpectralMixtureKernel(num_mixtures=4, ard_num_dims=1)
+        )
+        # self.covar_module = self.base_covar_module
+        self.covar_module = gpytorch.kernels.InducingPointKernel(
+            self.base_covar_module,
+            likelihood=likelihood,
+            inducing_points=train_x[::2].clone(),
+        )
+
+        self.covar_module.inducing_points.requires_grad_(False)
+
+    def forward(self, x):
+        mean_x = self.mean_module(x)
+        covar_x = self.covar_module(x)
+        return gpytorch.distributions.MultivariateNormal(mean_x, covar_x)
+
+
+class MyNNRBFModel2D(gpytorch.models.ExactGP):
     def __init__(self, train_x, train_y, likelihood):
         super().__init__(train_x, train_y, likelihood)
         self.feature_extractor = LargeFeatureExtractor(
@@ -649,3 +674,4 @@ class MyNNRBFModel(gpytorch.models.ExactGP):
         covar_x = self.covar_module(x)
         mean_x = self.mean_module(x)
         return gpytorch.distributions.MultivariateNormal(mean_x, covar_x)
+

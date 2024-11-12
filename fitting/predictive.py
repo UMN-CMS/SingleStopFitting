@@ -1,6 +1,6 @@
-
 import numpy as np
 
+import arviz as az
 import matplotlib.pyplot as plt
 import mplhep
 import pyro
@@ -13,6 +13,7 @@ from .plot_tools import getPolyFromSquares, makeSquares
 from .plots import plotRaw
 from .utils import chi2Bins
 
+
 def summary(samples):
     site_stats = {}
     for k, v in samples.items():
@@ -24,28 +25,36 @@ def summary(samples):
         }
     return site_stats
 
-def makePosteriorPred(bkg_mvn, test_data,  mask=None,):
+
+def statModel(bkg_mvn, observed=None):
+    background = pyro.sample("background", bkg_mvn)
+    with pyro.plate("bins", bkg_mvn.mean.shape[0]):
+        return pyro.sample_spec(
+            "observed", pyrod.Poisson(torch.clamp(background, 0)), obs=observed
+        )
+
+
+def makePosteriorPred(
+    bkg_mvn,
+    test_data,
+    mask=None,
+):
     ret = {}
-    def statModel(observed=None):
-        background = pyro.sample("background", bkg_mvn)
-        with pyro.plate("bins", bkg_mvn.mean.shape[0]):
-            return pyro.sample(
-                "observed", pyrod.Poisson(torch.clamp(background, 0)), obs=observed
-            )
 
     predictive = pyroi.Predictive(
         statModel,
         num_samples=800,
     )
-    pred = predictive()
+
+    pred = predictive(bkg_mvn)
     summ = summary(pred)
 
     stat_pulls = (bkg_mvn.mean - test_data.Y) / torch.sqrt(test_data.V)
     post_pulls = (bkg_mvn.mean - test_data.Y) / summ["observed"]["std"]
     pred_only_pulls = (bkg_mvn.mean - test_data.Y) / torch.sqrt(bkg_mvn.variance)
 
-
     d = test_data.dim
+
     def addWindow(ax):
         if mask is None or d != 2:
             return
@@ -54,7 +63,6 @@ def makePosteriorPred(bkg_mvn, test_data,  mask=None,):
             points = getPolyFromSquares(squares)
             poly = Polygon(points, edgecolor="green", linewidth=3, fill=False)
             ax.add_patch(poly)
-
 
     fig, ax = plt.subplots(layout="tight")
     ax.set_title("Relative Uncertainty In Pred")
@@ -80,13 +88,7 @@ def makePosteriorPred(bkg_mvn, test_data,  mask=None,):
 
     fig, ax = plt.subplots(layout="tight")
     f = plotRaw(
-        ax,
-        test_data.E,
-        test_data.X,
-        pred_only_pulls,
-        cmap="coolwarm",
-        cmin=-3,
-        cmax=3
+        ax, test_data.E, test_data.X, pred_only_pulls, cmap="coolwarm", cmin=-3, cmax=3
     )
     ax.set_title("Pull Latent Only")
     addWindow(ax)
@@ -94,13 +96,7 @@ def makePosteriorPred(bkg_mvn, test_data,  mask=None,):
 
     fig, ax = plt.subplots(layout="tight")
     f = plotRaw(
-        ax,
-        test_data.E,
-        test_data.X,
-        stat_pulls,
-        cmap="coolwarm",
-        cmin=-3,
-        cmax=3
+        ax, test_data.E, test_data.X, stat_pulls, cmap="coolwarm", cmin=-3, cmax=3
     )
     ax.set_title("Pull Statistical")
     addWindow(ax)
@@ -108,13 +104,7 @@ def makePosteriorPred(bkg_mvn, test_data,  mask=None,):
 
     fig, ax = plt.subplots(layout="tight")
     f = plotRaw(
-        ax,
-        test_data.E,
-        test_data.X,
-        post_pulls,
-        cmap="coolwarm",
-        cmin=-3,
-        cmax=3
+        ax, test_data.E, test_data.X, post_pulls, cmap="coolwarm", cmin=-3, cmax=3
     )
     addWindow(ax)
     ax.set_title("Pull Posterior")
@@ -131,7 +121,6 @@ def makePosteriorPred(bkg_mvn, test_data,  mask=None,):
     ax.set_title("Pull Stat - Pull Posterior")
     ret["post_pull_diff"] = (fig, ax)
 
-
     fig, ax = plt.subplots(layout="tight")
     p = post_pulls
     ax.hist(p, bins=np.linspace(-5.0, 5.0, 21), density=True)
@@ -145,10 +134,9 @@ def makePosteriorPred(bkg_mvn, test_data,  mask=None,):
     ax.legend()
     ret["post_global_pred_pulls_hist"] = (fig, ax)
 
-
     fig, ax = plt.subplots(layout="tight")
-    h1 = np.histogram(p.numpy(), bins=10, range=(-5,5),density=True)
-    h2 = np.histogram(p[mask].numpy(), bins=10,  range=(-5,5), density=True)
+    h1 = np.histogram(p.numpy(), bins=10, range=(-5, 5), density=True)
+    h2 = np.histogram(p[mask].numpy(), bins=10, range=(-5, 5), density=True)
     mplhep.histplot(h1, ax=ax, label="Global Pulls")
     mplhep.histplot(h2, ax=ax, label="Blinded Pulls")
     ax.plot(X, Y, label="Unit Normal")
@@ -157,10 +145,8 @@ def makePosteriorPred(bkg_mvn, test_data,  mask=None,):
 
     ret["combo_pulls_hist"] = (fig, ax)
 
-    global_chi2_pred = chi2Bins(
-                bkg_mvn.mean, test_data.Y, summ["observed"]["std"]
-            )
+    global_chi2_pred = chi2Bins(bkg_mvn.mean, test_data.Y, summ["observed"]["std"])
 
-    data = {"chi2_pred" : float(global_chi2_pred)}
+    data = {"chi2_pred": float(global_chi2_pred)}
 
-    return ret,data
+    return ret, data
