@@ -571,19 +571,23 @@ class RBFLayer(torch.nn.Module):
         )
 
 
-class NonStatKernel(gpytorch.kernels.RBFKernel):
+class NonStatKernel(gpytorch.kernels.Kernel):
     is_stationary = False
 
-    def __init__(self, dim=2, count=4, **kwargs):
+    def __init__(self, base_kernel=None, dim=2, count=4, bias=False, **kwargs):
         super().__init__(**kwargs)
         self.pre_transform = RBFLayer(dim, count)
-        self.trans = torch.nn.Linear(count, 1, bias=False)
+        self.trans = torch.nn.Linear(count, 1, bias=bias)
+        if base_kernel is None:
+            base_kernel=gpytorch.kernels.RBFKernel(ard_num_dims=dim)
+        self.base_kernel = base_kernel
 
     def forward(self, x1, x2, diag=False, **params):
         # for m,p in self.named_parameters():
         #     print(f"{m} = {p}")
 
-        r = super().forward(x1, x2, diag=diag, **params)
+        # r = super().forward(x1, x2, diag=diag, **params)
+        r = self.base_kernel.forward(x1, x2, diag=diag, **params)
         v1 = self.trans(self.pre_transform(x1))
         v2 = self.trans(self.pre_transform(x2))
         if diag:
@@ -622,19 +626,28 @@ class NonStatParametric1D(gpytorch.models.ExactGP):
         super().__init__(train_x, train_y, likelihood)
         self.mean_module = gpytorch.means.ConstantMean()
         self.base_covar_module = (
-            # NonStatKernel(count=4, ard_num_dims=1, dim=1)
-            NonStatKernel(count=3, ard_num_dims=1, dim=1) +
-            gpytorch.kernels.ScaleKernel(gpytorch.kernels.RBFKernel(ard_num_dims=1))
-            # gpytorch.kernels.SpectralMixtureKernel(num_mixtures=4, ard_num_dims=1)
+            # NonStatKernel(count=2, ard_num_dims=1, dim=1, bias=False)
+            NonStatKernel(count=1, ard_num_dims=1, dim=1)+
+            # NonStatKernel(base_kernel=gpytorch.kernels.RBFKernel(), count=1, dim=1)
+            # NonStatKernel(count=2, ard_num_dims=1, dim=1) 
+            # gpytorch.kernels.ScaleKernel(gpytorch.kernels.RQKernel(ard_num_dims=1))
+             gpytorch.kernels.ScaleKernel(gpytorch.kernels.RBFKernel(ard_num_dims=1))
+            # + gpytorch.kernels.ScaleKernel(gpytorch.kernels.RBFKernel(ard_num_dims=1))
+             # gpytorch.kernels.ScaleKernel(gpytorch.kernels.PiecewisePolynomialKernel(q=1))
+            # + gpytorch.kernels.ScaleKernel(gpytorch.kernels.MaternKernel(ard_num_dims=1))
+            # gpytorch.kernels.SpectralMixtureKernel(num_mixtures=8, ard_num_dims=1)
         )
-        # self.covar_module = self.base_covar_module
-        self.covar_module = gpytorch.kernels.InducingPointKernel(
-            self.base_covar_module,
-            likelihood=likelihood,
-            inducing_points=train_x[::2].clone(),
-        )
+        # self.base_covar_module.kernels[0].pre_transform.centers.data= torch.tensor([0.1])
+        # self.base_covar_module.kernels[0].pre_transform.centers.data._requires_grad(False)
 
-        self.covar_module.inducing_points.requires_grad_(False)
+        self.covar_module = self.base_covar_module
+        # self.covar_module = gpytorch.kernels.InducingPointKernel(
+        #     self.base_covar_module,
+        #     likelihood=likelihood,
+        #     inducing_points=train_x[::].clone(),
+        # )
+
+        # self.covar_module.inducing_points.requires_grad_(True)
 
     def forward(self, x):
         mean_x = self.mean_module(x)
@@ -675,3 +688,56 @@ class MyNNRBFModel2D(gpytorch.models.ExactGP):
         mean_x = self.mean_module(x)
         return gpytorch.distributions.MultivariateNormal(mean_x, covar_x)
 
+class MyRBF2D(gpytorch.models.ExactGP):
+    def __init__(self, train_x, train_y, likelihood):
+        super().__init__(train_x, train_y, likelihood)
+        self.mean_module = gpytorch.means.ConstantMean()
+        self.base_covar_module = gpytorch.kernels.ScaleKernel(
+            gpytorch.kernels.RBFKernel(ard_num_dims=2)
+        )
+        self.covar_module = gpytorch.kernels.InducingPointKernel(
+            self.base_covar_module,
+            likelihood=likelihood,
+            inducing_points=train_x[::4].clone(),
+        )
+
+
+    def forward(self, x):
+        covar_x = self.covar_module(x)
+        mean_x = self.mean_module(x)
+        return gpytorch.distributions.MultivariateNormal(mean_x, covar_x)
+
+
+class MyNNRBFModel1D(gpytorch.models.ExactGP):
+    def __init__(self, train_x, train_y, likelihood):
+        super().__init__(train_x, train_y, likelihood)
+        self.feature_extractor = LargeFeatureExtractor(
+            odim=1, idim=1, layer_sizes=(20,20)
+        )
+        self.scale_to_bounds = gpytorch.utils.grid.ScaleToBounds(-1.0, 1.0)
+
+        self.mean_module = gpytorch.means.ConstantMean()
+        self.base_covar_module = gpytorch.kernels.ScaleKernel(
+            gpytorch.kernels.RBFKernel(ard_num_dims=2)
+        )
+        self.covar_module = self.base_covar_module 
+        # self.covar_module = gpytorch.kernels.InducingPointKernel(
+        #     self.base_covar_module,
+        #     likelihood=likelihood,
+        #     inducing_points=train_x[::4].clone(),
+        # )
+
+        def init_weights(m):
+            if isinstance(m, torch.nn.Linear):
+                torch.nn.init.xavier_uniform_(m.weight)
+
+        # self.covar_module.inducing_points.requires_grad_(False)
+
+        self.apply(init_weights)
+
+    def forward(self, x):
+        x = self.feature_extractor(x)
+        x = self.scale_to_bounds(x)
+        covar_x = self.covar_module(x)
+        mean_x = self.mean_module(x)
+        return gpytorch.distributions.MultivariateNormal(mean_x, covar_x)

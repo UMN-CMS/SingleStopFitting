@@ -1,7 +1,9 @@
 import logging
 import sys
+import json
 from pathlib import Path
 
+import argparse
 import numpy as np
 
 import fitting.models
@@ -94,30 +96,42 @@ def createDatacard(obs, pred, signal_data, output_dir, signal_meta=None):
 
     metadata = {"signal_metadata" : signal_meta }
 
-    with open(output_dir / "metadata.json") as f:
+    with open(output_dir / "metadata.json", 'w') as f:
         f.write(json.dumps(metadata))
 
 
-
+def parseArguments():
+    parser = argparse.ArgumentParser(description='')
+    parser.add_argument('--output')
+    parser.add_argument('--base')
+    parser.add_argument('inputs',nargs="+" )
+    return parser.parse_args()
+    
 
 def main():
-    base_dir = Path(sys.argv[1]).absolute()
-    out_dir = Path(sys.argv[2])
-    signal_dirs = list(base_dir.glob("signal*"))
 
-    for signal_dir in signal_dirs:
-        signal_name = signal_dir.relative_to(base_dir).parts[0]
+    args = parseArguments()
+
+    for data_path in args.inputs:
+        p = Path(data_path)
+        parent = p.parent
+        signal_name = next(x for x in p.parts if "signal_" in x)
         print(signal_name)
-        signal_data_path = signal_dir / "signal_data.pth"
-        est_path = signal_dir / "inject_r_0p0"
-        est_data_path = est_path / "train_model.pth"
+        relative = parent.relative_to(Path("."))
+        if args.base:
+            relative=relative.relative_to(Path(args.base))
+        signal_data_path = parent.parent / "signal_data.pth"
+        est_path = parent / "inject_r_0p0"
         sig_data = torch.load(signal_data_path)  # , weights_only=True)
-        bkg_data = torch.load(est_data_path)
-        obs, pred = getPrediction(bkg_data)
+        bkg_data = torch.load(p)
+        print(bkg_data.keys())
+        #obs, pred = getPrediction(bkg_data, model_class=fitting.models.NonStatParametric1D)
+        obs, pred = getPrediction(bkg_data, model_class=fitting.models.NonStatParametric2D)
         _, coupling ,mt, mx = signal_name.split("_")
         mt,mx = int(mt), int(mx)
-        signal_metadata = dict(name=signal_name, coupling=coupling, mass_stop = mt, mass_chargino=mx)
-        createDatacard(obs, pred, sig_data["signal_data"], out_dir / signal_name / "inject_r_0p0", signal_meta=signal_metadata) 
+        signal_metadata = dict(name=signal_name, coupling=coupling, mass_stop = mt, mass_chargino=mx, rate=bkg_data["metadata"]["signal_injected"])
+        (args.output / relative).mkdir(exist_ok=True, parents=True)
+        createDatacard(obs, pred, sig_data["signal_data"], args.output / relative, signal_meta=signal_metadata) 
 
 
 if __name__ == "__main__":

@@ -47,7 +47,7 @@ def makeRegressionData(
     get_window_mask=False,
 ):
     if mask_function is None:
-        mask_function = lambda *x: (torch.full_like(x[0], False, dtype=torch.bool))
+        mask_function = lambda x: (torch.full_like(x[..., 0], False, dtype=torch.bool))
 
     edges = tuple(torch.from_numpy(a.edges) for a in histogram.axes)
     centers = tuple(torch.diff(e) / 2 + e[:-1] for e in edges)
@@ -64,10 +64,12 @@ def makeRegressionData(
         domain_mask = torch.full_like(bin_values, False, dtype=torch.bool)
 
     centers_grid = torch.stack(centers_grid, axis=-1)
-    unbound = torch.unbind(centers_grid, dim=-1)
     if domain_mask_function is not None:
-        domain_mask = domain_mask | domain_mask_function(*unbound)
-    m = mask_function(*unbound)
+        domain_mask = domain_mask | domain_mask_function(centers_grid)
+
+    print(domain_mask.shape)
+    m = mask_function(centers_grid)
+    print(m.shape)
     centers_mask = m | domain_mask
     flat_centers = torch.flatten(centers_grid, end_dim=1)
     flat_bin_values = torch.flatten(bin_values)
@@ -201,9 +203,5 @@ def optimizeHyperparams(
 
 
 def getBlindedMask(inputs, mask_func):
-    if inputs.dim() > 1:
-        unbound = torch.unbind(inputs, dim=-1)
-    else:
-        unbound = (inputs,)
-    mask = mask_func(*unbound)
+    mask = mask_func(inputs)
     return mask

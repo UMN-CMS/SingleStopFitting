@@ -29,7 +29,7 @@ def summary(samples):
 def statModel(bkg_mvn, observed=None):
     background = pyro.sample("background", bkg_mvn)
     with pyro.plate("bins", bkg_mvn.mean.shape[0]):
-        return pyro.sample_spec(
+        return pyro.sample(
             "observed", pyrod.Poisson(torch.clamp(background, 0)), obs=observed
         )
 

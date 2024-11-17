@@ -1,5 +1,6 @@
 import json
 import logging
+import scipy
 import pickle as pkl
 import random
 import shutil
@@ -19,7 +20,7 @@ from gpytorch.kernels import ScaleKernel as SK
 from rich import print
 
 from . import models, regression, transformations, windowing
-from .blinder import makeWindow1D, makeWindow2D, windowPlot1D, windowPlot2D
+from .blinder import makeWindow1D, makeWindow2D, windowPlot1D, windowPlots2D
 from .plots import makeDiagnosticPlots, makeNNPlots
 from .predictive import makePosteriorPred
 from .utils import chi2Bins, modelToPredMVN
@@ -95,6 +96,8 @@ def doCompleteRegression(
     train_transform = transformations.getNormalizationTransform(train_data)
     normalized_train_data = train_transform.transform(train_data)
     normalized_test_data = train_transform.transform(test_data)
+    print(normalized_train_data.X.shape)
+    print(normalized_test_data.X.shape)
 
     if torch.cuda.is_available() and use_cuda:
         train = normalized_train_data.toGpu()
@@ -112,19 +115,26 @@ def doCompleteRegression(
         noise_constraint=gpytorch.constraints.GreaterThan(1e-10),
     )
     model = model_class(train.X, train.Y, likelihood)
+    print(model)
     if torch.cuda.is_available() and use_cuda:
         model = model.cuda()
         likelihood = likelihood.cuda()
 
     def validate(model):
-        X = normalized_test_data.X.cuda()
-        Y = normalized_test_data.Y.cuda()
-        V = normalized_test_data.V.cuda()
+        if use_cuda:
+            X = normalized_test_data.X.cuda()
+            Y = normalized_test_data.Y.cuda()
+            V = normalized_test_data.V.cuda()
+        else:
+            X = normalized_test_data.X
+            Y = normalized_test_data.Y
+            V = normalized_test_data.V
         if window_func is not None:
             mask = regression.getBlindedMask(test_data.X, window_func)
         else:
             mask = torch.ones_like(test_data.Y, dtype=bool)
-        mask = mask.cuda()
+        if use_cuda:
+            mask = mask.cuda()
         output = model(X)
         bpred_mean = output.mean
         chi2 = chi2Bins(Y, bpred_mean, V, mask)
@@ -136,7 +146,7 @@ def doCompleteRegression(
         likelihood,
         train,
         bar=False,
-        iterations=250,
+        iterations=100,
         lr=lr,
         get_evidence=True,
         chi2mask=train_data.Y > min_counts,
@@ -240,12 +250,9 @@ def doCompleteRegression(
         blind_mask=mask,
         transform=train_transform,
         model_dict=model.state_dict(),
+        metadata=data,
     )
 
-    torch.save(save_data, save_dir / "train_model.pth")
-
-    with open(save_dir / "info.json", "w") as f:
-        json.dump(data, f)
     return save_data
 
 
@@ -266,14 +273,15 @@ def doRegressionForSignal(
 
     if signal_hist:
         signal_regression_data, *_ = regression.makeRegressionData(signal_hist)
-        if dim == 2:
-            window = makeWindow2D(signal_regression_data, frac=0.3)
-        elif dim == 1:
-            window = makeWindow1D(signal_regression_data, frac=0.6)
+        try:
+            if dim == 2:
+                window = makeWindow2D(signal_regression_data, spread=1.0)
+            elif dim == 1:
+                window = makeWindow1D(signal_regression_data, spread=1.3)
+        except (scipy.optimize.OptimizeWarning, RuntimeError):
+            window = None
 
-        if window is None:
-            print(f"COULD NOT FIND VALID WINDOW FOR SIGNAL {signal_name}")
-            return
+
         sd = dict(
             signal_data=signal_regression_data,
             signal_hist=signal_hist,
@@ -289,27 +297,36 @@ def doRegressionForSignal(
         if dim == 1:
             fig, ax = windowPlot1D(signal_regression_data, window)
         else:
-            fig, ax = windowPlot2D(signal_regression_data, window)
-        fig.savefig(sig_dir / f"{signal_name}.pdf")
+            window_plots = windowPlots2D(signal_regression_data, window)
+        for name, (fig,_) in window_plots.items():
+            fig.savefig(sig_dir / f"{name}.pdf")
+    if window is None:
+        print(f"COULD NOT FIND VALID WINDOW FOR SIGNAL {signal_name}")
+        return
 
     if dim == 1:
         model = models.NonStatParametric1D
+
+        # model = models.MyNNRBFModel1D
     else:
         model = models.NonStatParametric2D
+        model = models.MyNNRBFModel2D
+        model = models.MyRBF2D
 
     print(model)
 
     for r in signal_injections:
         print(f"Performing estimation for signal {signal_name}.")
-        print(f"Injecting background with signals strength {round(r,3)}")
         save_dir = sig_dir / f"inject_r_{str(round(r,3)).replace('.','p')}"
         save_dir.mkdir(exist_ok=True, parents=True)
+
         if signal_hist is not None:
+            print(f"Injecting background with signals strength {round(r,3)}")
             to_estimate = bkg_hist + r * signal_hist
         else:
             to_estimate = bkg_hist
 
-        d = doCompleteRegression(
+        data = doCompleteRegression(
             to_estimate,
             window,
             save_dir=save_dir,
@@ -317,6 +334,8 @@ def doRegressionForSignal(
             mean=mean,
             domain_mask_function=None if dim == 2 else None,
         )
+        data["metadata"].update({"signal_injected": r})
+        torch.save(data, save_dir / "bkg_estimation_result.pth")
         plt.close("all")
 
 
@@ -335,187 +354,152 @@ def doEstimationForSignals(
             bkg_hist,
             base_dir,
             mean=mean,
-            # signal_injections=[0.0, 0.5, 1.0, 4.0, 16.0],
+            #signal_injections=[0.0, 1.0, 4.0, 16.0],
             signal_injections=[0.0],
+            # signal_injections=[0.0],
         )
 
         plt.close("all")
 
 
-def getHists2D(fit_region, scale=1.0):
-    with open(
-        "regression_results/2018_Signal312_nn_uncomp_0p67_m14_vs_mChiUncompRatio.pkl",
-        "rb",
-    ) as f:
+def getHists1D(
+    background_path,
+    signal_path,
+    signals=None,
+    fit_region=None,
+    scale=1.0,
+    signal_selection="Signal312",
+    background_name="Data2018",
+    background_selection="Control",
+):
+    with open(signal_path, "rb") as f:
         signal312 = pkl.load(f)
 
-    with open(
-        "regression_results/2018_Control_nn_uncomp_0p67_m14_vs_mChiUncompRatio.pkl",
-        "rb",
-    ) as f:
+    with open(background_path, "rb") as f:
         control = pkl.load(f)
 
-    print(signal312.keys())
-
-    bkg_hist = control["Data2018", "Control"]["hist_collection"]["histogram"]
+    bkg_hist = control[background_name, background_selection]["hist_collection"][
+        "histogram"
+    ][:, sum]
     bkg_hist = bkg_hist[fit_region] * scale
 
-    signal_hist_names = [
-        "signal_312_1500_600",
-        # "signal_312_1000_600",
-        # "signal_312_1300_600",
-        # "signal_312_2000_1700",
-        # "signal_312_1500_400",
-        # "signal_312_1500_100",
-        # "signal_312_2000_400",
-        # "signal_312_1000_400",
-        # "signal_312_1500_1000",
-        # "signal_312_1300_400",
-        # "signal_312_1200_600",
-        # "signal_312_1200_400",
-        # "signal_312_1200_700",
-        # "signal_312_2000_1200",
-        # "signal_312_1200_800",
-        # "signal_312_1500_900",
-        # "signal_312_1400_400",
-        # "signal_312_2000_1600",
-        # "signal_312_2000_900",
-        # "signal_312_1000_700",
-    ]
-
-    # signal_hist_names = [
-    #     "signal_312_1200_1100",
-    #     "signal_312_1500_1400",
-    #     "signal_312_2000_1900",
-    # ]
+    signals = signals or [x[0] for x in signal312.keys() if "signal" in x]
+    signals=reversed(signals)
     signals_to_scan = [
         (
-            sn,
-            signal312[sn, "Signal312"]["hist_collection"]["histogram"]["central", ...][
-                fit_region
-            ],
+            s,
+            signal312[s, signal_selection]["hist_collection"]["histogram"][
+                "central", ...
+            ][:, sum][fit_region],
         )
-        for sn in signal_hist_names
+        for s in signals
     ]
-
     return bkg_hist, signals_to_scan
 
 
-def getHists2DCompressed(fit_region, scale=1.0):
-    with open(
-        "regression_results/2018_Signal312_nn_comp_0p67_m14_vs_mChiComp.pkl",
-        "rb",
-    ) as f:
+def getHists2D(
+    background_path,
+    signal_path,
+    signals=None,
+    fit_region=None,
+    scale=1.0,
+    signal_selection="Signal312",
+    background_name="Data2018",
+    background_selection="Control",
+):
+    with open(signal_path, "rb") as f:
         signal312 = pkl.load(f)
 
-    with open(
-        "regression_results/2018_Control_nn_comp_0p67_m14_vs_mChiComp.pkl",
-        "rb",
-    ) as f:
+    with open(background_path, "rb") as f:
         control = pkl.load(f)
 
-    print(signal312.keys())
-
-    bkg_hist = control["Data2018", "Control"]["hist_collection"]["histogram"]
+    print(control.keys())
+    bkg_hist = control[background_name, background_selection]["hist_collection"][
+        "histogram"
+    ]["central", ...]
+    print(fit_region)
     bkg_hist = bkg_hist[fit_region] * scale
 
-    signal_hist_names = [
-        "signal_312_1200_1100",
-        "signal_312_1500_1400",
-        "signal_312_2000_1900",
-    ]
-    signals_to_scan = [
-        (
-            sn,
-            signal312[sn, "Signal312"]["hist_collection"]["histogram"]["central", ...][
-                fit_region
-            ],
-        )
-        for sn in signal_hist_names
-    ]
-
-    return bkg_hist, signals_to_scan
-
-
-def getHists1D(fit_region, scale=1.0):
-    # with open(
-    #     "regression_results/2018_Signal312_m14_m.pkl",
-    #     "rb",
-    # ) as f:
-    #     signal312 = pkl.load(f)
-    #
-    # with open(
-    #     "regression_results/2018_Control_m14_m.pkl",
-    #     "rb",
-    # ) as f:
-    #     control = pkl.load(f)
-
-    with open(
-        "regression_results/2018_Signal312_nn_uncomp_0p67_m14_vs_mChiUncompRatio.pkl",
-        "rb",
-    ) as f:
-        signal312 = pkl.load(f)
-
-    with open(
-        "regression_results/2018_Control_nn_uncomp_0p67_m14_vs_mChiUncompRatio.pkl",
-        "rb",
-    ) as f:
-        control = pkl.load(f)
-
     print(signal312.keys())
-
-    bkg_hist = control["Data2018", "Control"]["hist_collection"]["histogram"][:, sum]
-    bkg_hist = bkg_hist[fit_region] * scale
-
-    # signal_hist_names = [
-    #     "signal_312_1200_400",
-    #     "signal_312_1200_800",
-    #     "signal_312_1500_400",
-    #     "signal_312_1500_600",
-    #     "signal_312_1500_1000",
-    #     "signal_312_2000_900",
-    #     "signal_312_2000_1200",
-    # ]
-    signal_hist_names = [
-        "signal_312_1200_1100",
-        "signal_312_1500_1400",
-        "signal_312_2000_1900",
-    ]
+    signals = signals or [x[0] for x in signal312.keys() if "signal" in x[0]]
+    signals=reversed(signals)
     signals_to_scan = [
         (
-            sn,
-            signal312[sn, "Signal312"]["hist_collection"]["histogram"]["central", ...][:, sum][
-                fit_region
-            ],
+            s,
+            signal312[s, signal_selection]["hist_collection"]["histogram"][
+                "central", ...
+            ][fit_region],
         )
-        for sn in signal_hist_names
+        for s in signals
     ]
-    signals_to_scan.append((None, None))
-    # signals_to_scan = [(None, None)]
-
     return bkg_hist, signals_to_scan
 
 
 def fit(path, fit_region, mc_hist=None):
-    bkg_hist, signals_to_scan = getHists2DCompressed(fit_region, scale=0.1)
+    bkg_hist, signals_to_scan = getHists2D(fit_region, scale=0.1)
     # bkg_hist, signals_to_scan = getHists1D(fit_region, scale=0.1)
     doEstimationForSignals(signals_to_scan, bkg_hist, path, mean=mc_hist)
 
 
+def createEstimationGrid(
+    background_path,
+    signal_path,
+    output_dir,
+    dim,
+    fit_region=None,
+    signal_names=None,
+    background_scale=1.0,
+):
+    output_dir = Path(output_dir)
+    if dim == 1:
+        bkg_hist, signals_to_scan = getHists1D(
+            background_path,
+            signal_path,
+            fit_region=fit_region,
+            signals=signal_names,
+            scale=background_scale,
+            signal_selection="Signal312",
+            background_selection="Signal312",
+            background_name="QCDInclusive2018",
+        )
+    elif dim == 2:
+        bkg_hist, signals_to_scan = getHists2D(
+            background_path,
+            signal_path,
+            fit_region=fit_region,
+            signals=signal_names,
+            scale=background_scale,
+            signal_selection="Signal312",
+            background_selection="Signal312",
+            background_name="QCDInclusive2018",
+        )
+
+    doEstimationForSignals(signals_to_scan, bkg_hist, output_dir)
+
+
 def main():
+    # import warnings 
+    # warnings.filterwarnings('error')
     mpl.use("Agg")
     mplhep.style.use("CMS")
-    kname, kernel = "para", SK(
-        gpytorch.kernels.RBFKernel(ard_num_dims=2)
-    ) + models.NonStatKernel(
-        dim=2, count=4
-    )  # + models.NonStatKernel(dim=2, count=4)
-    fit(
-        "allscans/control_reduced_2d",
-        (slice(hist.loc(900), None), slice(hist.loc(0.25), None)),
+
+    region_2d = (slice(hist.loc(900), None), slice(hist.loc(0.25), None))
+    region_1d = (slice(hist.loc(500), None),)
+
+    createEstimationGrid(
+        "regression_results/2018_Signal312_nn_uncomp_0p67_m14_vs_mChiUncompRatio.pkl",
+        "regression_results/2018_Signal312_nn_uncomp_0p67_m14_vs_mChiUncompRatio.pkl",
+        "gaussian_window_results",
+        2,
+        # signal_names=["signal_312_1000_600"],
+        fit_region=region_2d,
+        background_scale=1.0,
     )
+    #
+    #     "allscans/control_reduced",
+    # )
     # fit("allscans/control", kernel, kname, (slice(None), slice(None)))
-    # fit("allscans/control_reduced_1d", (slice(hist.loc(1100), None),))
+    # fit("allscans/control_reduced_1d", (slice(hist.loc(500), None),))
     # fit("allscans/control", kernel, kname, (slice(None)))
 
 

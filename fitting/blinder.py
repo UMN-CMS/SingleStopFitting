@@ -1,16 +1,15 @@
 import pickle as pkl
 from collections import namedtuple
+from dataclasses import dataclass
 from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
+import scipy.optimize
 import torch
-
-from . import regression
-from .plot_tools import plotData
-from .windowing import EllipseWindow
 from matplotlib.patches import Polygon
 
+from . import regression
 from .plot_tools import (
     addAxesToHist,
     getPolyFromSquares,
@@ -20,143 +19,164 @@ from .plot_tools import (
 )
 
 
-Window = namedtuple("Window", "center axes")
+def rotationMatrix(theta):
+    return torch.tensor(
+        [[torch.cos(theta), -torch.sin(theta)], [torch.sin(theta), torch.cos(theta)]]
+    )
 
 
-def makeWindow1D(signal_data, frac=0.68):
-    max_idx = torch.argmax(signal_data.Y)
-    max_x = signal_data.X[max_idx]
-    print(max_x)
+def gaussian2D(X, amplitude, xo, yo, sigma_x, sigma_y, theta):
+    x, y = X[..., 0], X[..., 1]
+    a = (torch.cos(theta) ** 2) / (2 * sigma_x**2) + (torch.sin(theta) ** 2) / (
+        2 * sigma_y**2
+    )
+    b = -(torch.sin(2 * theta)) / (4 * sigma_x**2) + (torch.sin(2 * theta)) / (
+        4 * sigma_y**2
+    )
+    c = (torch.sin(theta) ** 2) / (2 * sigma_x**2) + (torch.cos(theta) ** 2) / (
+        2 * sigma_y**2
+    )
+    g = amplitude * torch.exp(
+        -(a * ((x - xo) ** 2) + 2 * b * (x - xo) * (y - yo) + c * ((y - yo) ** 2))
+    )
+    return g
 
-    rough_window = torch.tensor([max_x - 400.0, max_x + 400.0])
-    mask = (signal_data.X > rough_window[0]) & (signal_data.X < rough_window[1])
-    masked_x, masked_y = signal_data.X[mask], signal_data.Y[mask]
-    total = torch.sum(signal_data.Y)
-    print(total)
-    curr_best = (0, 999999)
-    for x in masked_x:
-        greater = masked_x > x
-        for y in masked_x[greater]:
-            total_mask = (masked_x > x) & (masked_x < y)
-            window_total = torch.sum(masked_y[total_mask])
-            win_frac = window_total / total
 
-            if win_frac > frac and (y - x) < (curr_best[1] - curr_best[0]):
-                print(f"{curr_best}, {win_frac}")
-                curr_best = (x, y)
-    diff = curr_best[1] - curr_best[0]
-    return EllipseWindow(curr_best[0] + diff / 2, diff / 2)
+def gaussian1D(X, amplitude, xo, sigma_x):
+    g = amplitude * torch.exp(-(((X - xo) / sigma_x) ** 2))
+    return g.ravel()
+
+
+def numpyGaussian2D(X, amplitude, xo, yo, sigma_x, sigma_y, theta):
+    x, y = X[..., 0], X[..., 1]
+    a = (np.cos(theta) ** 2) / (2 * sigma_x**2) + (np.sin(theta) ** 2) / (
+        2 * sigma_y**2
+    )
+    b = -(np.sin(2 * theta)) / (4 * sigma_x**2) + (np.sin(2 * theta)) / (
+        4 * sigma_y**2
+    )
+    c = (np.sin(theta) ** 2) / (2 * sigma_x**2) + (np.cos(theta) ** 2) / (
+        2 * sigma_y**2
+    )
+    g = amplitude * np.exp(
+        -(a * ((x - xo) ** 2) + 2 * b * (x - xo) * (y - yo) + c * ((y - yo) ** 2))
+    )
+    return g
+
+
+def numpyGaussian1D(X, amplitude, xo, sigma_x):
+    g = amplitude * np.exp(-(((X - xo) / sigma_x) ** 2))
+    return g.ravel()
+
+
+@dataclass
+class GaussianWindow1D:
+    amplitude: float
+    center: float
+    sigma: float
+
+    spread: float
+
+    normalization_scale: torch.Tensor
+
+    def __call__(self, X):
+        vals = self.vals(X)
+        one_point = self.vals(
+            self.normalization_scale * (self.center + self.spread * self.sigma)
+        )
+        mask = vals > one_point
+        return mask
+
+    def vals(self, X):
+        X = X / self.normalization_scale
+        v = gaussian1D(X, self.amplitude, self.center, self.sigma)
+        return v
+
+
+@dataclass
+class GaussianWindow2D:
+    amplitude: float
+    center: torch.Tensor
+    sigma: torch.Tensor
+    theta: float
+
+    spread: float
+
+    normalization_scale: torch.Tensor
+
+    def vals(self, X):
+        X = X / self.normalization_scale
+        v = gaussian2D(X, self.amplitude, *self.center, *self.sigma, self.theta)
+        return v
+
+    def __call__(self, X):
+        vals = self.vals(X)
+        rm = rotationMatrix(self.theta)
+        target = self.spread * (rm @ self.sigma) + self.center
+        one_point = self.vals(self.normalization_scale * target.unsqueeze(0))
+
+        mask = vals > one_point
+        return mask
+
+
+def makeWindow1D(signal_data, spread=1.0):
+    X = signal_data.X
+    s = X.max(dim=0).values
+    X = X / s
+    Y = signal_data.Y
+    popt, pcov = scipy.optimize.curve_fit(numpyGaussian1D, X, Y)
+    return GaussianWindow1D(
+        *[torch.Tensor([x]) for x in popt], torch.tensor([spread]), s
+    )
+
+
+def makeWindow2D(signal_data, spread=1.0):
+    X = signal_data.X
+    s = X.max(dim=0).values
+    X = X / s
+    Y = signal_data.Y
+    popt, pcov = scipy.optimize.curve_fit(
+        numpyGaussian2D,
+        X,
+        Y,
+        p0=[1.0, *X[torch.argmax(signal_data.Y)], 0.05, 0.05, 0.0],
+    )
+
+    return GaussianWindow2D(
+        torch.tensor(popt[0]),
+        torch.tensor(popt[1:3]),
+        torch.tensor(popt[3:5]),
+        torch.tensor([popt[5]]),
+        spread,
+        s,
+    )
 
 
 def windowPlot1D(signal_data, window, frac=None):
     fig, ax = plt.subplots()
     plotData(ax, signal_data)
-    if window.center - window.axes/2:
+    if window.center - window.axes / 2:
         ax.axvline(window.center - window.axes, 0, 1, color="black")
-    if window.center + window.axes/2:
+    if window.center + window.axes / 2:
         ax.axvline(window.center + window.axes, 0, 1, color="black")
     return fig, ax
 
 
-def windowPlot2D(signal_data, window, frac=None):
+def windowPlots2D(signal_data, window, frac=None):
     fig, ax = plt.subplots()
+    ret = {}
     plotData(ax, signal_data)
-    mask = window(*torch.unbind(signal_data.X, dim=-1))
-    squares = makeSquares(signal_data.X[mask], signal_data.E)
-    points = getPolyFromSquares(squares)
-    poly = Polygon(points, edgecolor="green", linewidth=3, fill=False)
-    ax.add_patch(poly)
+    if window is not None:
+        mask = window(signal_data.X)
+        squares = makeSquares(signal_data.X[mask], signal_data.E)
+        points = getPolyFromSquares(squares)
+        poly = Polygon(points, edgecolor="green", linewidth=3, fill=False)
+        ax.add_patch(poly)
 
-    return fig, ax
+        figm, axm = plt.subplots()
+        plotRaw(axm, signal_data.E, signal_data.X, mask.to(torch.float64))
+        ret["mask"] = (figm, axm)
 
+    ret["sig_window"] = (fig, ax)
 
-def makeWindow2D(signal_data, frac=0.4):
-    total = torch.sum(signal_data.Y)
-    peak_x = signal_data.X[signal_data.Y.argmax()]
-    min_x = torch.transpose(signal_data.X, 0, 1).min(dim=1).values
-    max_x = torch.transpose(signal_data.X, 0, 1).max(dim=1).values
-    diff = max_x - min_x
-    w = 0.15 * diff
-    ll, ur = peak_x - w, peak_x + w
-
-    mask = (signal_data.X > ll).all(dim=1) & (signal_data.X < ur).all(dim=1)
-    masked_x, masked_y = signal_data.X[mask], signal_data.Y[mask]
-
-    step_x0 = (masked_x[:, 0][masked_x[:, 0] > peak_x[0]] - peak_x[0])[::4]
-    step_x1 = (masked_x[:, 1][masked_x[:, 1] > peak_x[1]] - peak_x[1])[::4]
-
-    curr_best = (0, 999999)
-    curr_best_size = 999999999
-    best_window = None
-    print(step_x0.shape)
-    print(torch.cartesian_prod(step_x0, step_x1).shape)
-    
-    for a, b in torch.cartesian_prod(step_x0, step_x1):
-        a = a-0.01
-        b = b-0.01
-        w = EllipseWindow(peak_x, torch.tensor([a, b]))
-        m = w(*torch.unbind(masked_x, dim=-1))
-        window_total = masked_y[m].sum()
-        win_frac = window_total / total
-        size = torch.count_nonzero(m)
-        # print(win_frac, w)
-        if win_frac > frac and size < curr_best_size:
-            print(f"{curr_best}, {win_frac}, {size}")
-            print(w)
-            curr_best = (a, b)
-            curr_best_size = size
-            best_window=w
-    print("Done")
-    return best_window
-
-
-def main():
-    with open(
-        "regression_results/2018_Signal312_m14_m.pkl",
-        "rb",
-    ) as f:
-        signal312 = pkl.load(f)
-
-    with open(
-        "regression_results/2018_Signal312_nn_uncomp_0p67_m14_vs_mChiUncompRatio.pkl",
-        "rb",
-    ) as f:
-        signal312_2d = pkl.load(f)
-
-    # signal_hist_names = [
-    #     "signal_312_1200_1100",
-    #     "signal_312_1500_1400",
-    #     "signal_312_2000_1900",
-    # ]
-    signal_hist_names = [
-        "signal_312_1200_400",
-        "signal_312_1200_800",
-        "signal_312_1500_400",
-        "signal_312_1500_600",
-        "signal_312_1500_1000",
-        "signal_312_2000_900",
-        "signal_312_2000_1200",
-    ]
-    signals_to_scan = [
-        (
-            sn,
-            signal312_2d[sn, "Signal312"]["hist_collection"]["histogram"][
-                "central", ...
-            ],
-        )
-        for sn in signal_hist_names
-    ]
-    output_dir = Path("signal_plots")
-    output_dir.mkdir(exist_ok=True, parents=True)
-
-    for n, h in signals_to_scan:
-        signal_regression_data, *_ = regression.makeRegressionData(h)
-        window = makeWindow2D(signal_regression_data)
-        # window = makeWindow1D(signal_regression_data)
-        # fig,ax = windowPlot1D(signal_regression_data, window)
-        fig, ax = windowPlot2D(signal_regression_data, window)
-        fig.savefig(output_dir/f"{n}.pdf")
-
-
-if __name__ == "__main__":
-    main()
+    return ret
