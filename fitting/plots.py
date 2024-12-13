@@ -180,6 +180,15 @@ def makeDiagnosticPlots2D(pred, raw_test, raw_train, mask=None, inducing_points=
     ax.set_title("Relative Uncertainty (std/val)")
     addWindow(ax)
     ret["relative_uncertainty"] = (fig, ax)
+
+    fig, ax = plt.subplots(layout="tight")
+    f = plotRaw(
+        ax, raw_test.E, raw_test.X, torch.sqrt(raw_test.V) / raw_test.Y
+    )
+    ax.set_title("Relative Stat Uncertainty (std/val)")
+    addWindow(ax)
+    ret["relative_stat_uncertainty"] = (fig, ax)
+
     ret.update(plotPullDists(pred, raw_test, mask=mask))
     return ret
 

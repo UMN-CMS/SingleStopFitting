@@ -11,9 +11,8 @@ import fitting.transformations as transformations
 import gpytorch
 import torch
 import uproot
-from fitting.regression import DataValues, makeRegressionData
+from fitting.regression import DataValues, makeRegressionData, getPrediction
 from fitting.utils import getScaledEigenvecs, modelToPredMVN, chi2Bins
-from fitting.storage import getPrediction
 
 from .datacard import Channel, DataCard, Process, Systematic
 
@@ -121,15 +120,13 @@ def main():
         if args.base:
             relative=relative.relative_to(Path(args.base))
         signal_data_path = parent.parent / "signal_data.pth"
-        est_path = parent / "inject_r_0p0"
         sig_data = torch.load(signal_data_path)  # , weights_only=True)
         bkg_data = torch.load(p)
-        print(bkg_data.keys())
         #obs, pred = getPrediction(bkg_data, model_class=fitting.models.NonStatParametric1D)
-        obs, pred = getPrediction(bkg_data, model_class=fitting.models.NonStatParametric2D)
+        obs, pred = getPrediction(bkg_data)#, model_class=fitting.models.NonStatParametric2D)
         _, coupling ,mt, mx = signal_name.split("_")
         mt,mx = int(mt), int(mx)
-        signal_metadata = dict(name=signal_name, coupling=coupling, mass_stop = mt, mass_chargino=mx, rate=bkg_data["metadata"]["signal_injected"])
+        signal_metadata = dict(name=signal_name, coupling=coupling, mass_stop = mt, mass_chargino=mx, rate=bkg_data.metadata["signal_injected"])
         (args.output / relative).mkdir(exist_ok=True, parents=True)
         createDatacard(obs, pred, sig_data["signal_data"], args.output / relative, signal_meta=signal_metadata) 
 

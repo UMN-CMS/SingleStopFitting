@@ -599,7 +599,7 @@ class NonStatKernel(gpytorch.kernels.Kernel):
 
 
 class NonStatParametric2D(gpytorch.models.ExactGP):
-    def __init__(self, train_x, train_y, likelihood, function=None):
+    def __init__(self, train_x, train_y, likelihood, function=None, num_inducing=None):
         super().__init__(train_x, train_y, likelihood)
         self.mean_module = gpytorch.means.ConstantMean()
         self.base_covar_module = (
@@ -607,13 +607,17 @@ class NonStatParametric2D(gpytorch.models.ExactGP):
             + NonStatKernel(ard_num_dims=2)
             + gpytorch.kernels.ScaleKernel(gpytorch.kernels.RBFKernel(ard_num_dims=2))
         )
+        if num_inducing is None:
+            ind = train_x[::4].clone()
+        else:
+            ind = train_x[:num_inducing].clone()
         self.covar_module = gpytorch.kernels.InducingPointKernel(
             self.base_covar_module,
             likelihood=likelihood,
-            inducing_points=train_x[::4].clone(),
+            inducing_points=ind
         )
 
-        self.covar_module.inducing_points.requires_grad_(False)
+        # self.covar_module.inducing_points.requires_grad_(False)
 
     def forward(self, x):
         mean_x = self.mean_module(x)

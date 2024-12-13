@@ -1,53 +1,26 @@
-import logging
-import sys
-from pathlib import Path
 
-import numpy as np
 
-import fitting.models
-import fitting.transformations as transformations
-import gpytorch
-import torch
-import uproot
-from fitting.regression import DataValues, makeRegressionData
-from fitting.utils import getScaledEigenvecs, modelToPredMVN, chi2Bins
+def createDataFromPosterior(bin_counts, num):
+    dist = torch.distributions.multinomial.Multinomial(
+        total_count=num, probs=bin_counts
+    )
+    return dist.sample()
 
-def getPrediction(bkg_data, model_class):
+
+if __name__ == "__main__":
+    bkg_data = torch.load(
+        "gaussian_window_results/signal_312_1500_400/inject_r_0p0/bkg_estimation_result.pth"
+    )
     hist = bkg_data["input_data"]
-    raw_regression_data, *_ = makeRegressionData(hist)
-    bm = bkg_data["blind_mask"]
-    dm = bkg_data["domain_mask"]
+    obs, pred = getPrediction(bkg_data, model_class=fitting.models.NonStatParametric2D)
+    print(obs.Y.sum())
+    print(torch.max(obs.Y))
+    print(torch.max(pred.mean))
+    print(pred.mean.sum())
+    h = createDataFromPosterior(torch.clamp(pred.mean, min=0), int(pred.mean.sum()))
+    print(torch.max(h))
+    print(h.sum())
 
-    all_data = raw_regression_data.getMasked(dm)
-    blinded_data = all_data.getMasked(~bm)
-
-    transform = transformations.getNormalizationTransform(blinded_data)
-
-    normalized_blinded_data = transform.transform(blinded_data)
-    normalized_all_data = transform.transform(all_data)
-
-    likelihood = gpytorch.likelihoods.FixedNoiseGaussianLikelihood(
-        noise=normalized_blinded_data.V,
-        learn_additional_noise=False,
-        noise_constraint=gpytorch.constraints.GreaterThan(1e-10),
-    )
-    model = model_class(
-        normalized_blinded_data.X, normalized_blinded_data.Y, likelihood
-    )
-    model.load_state_dict(bkg_data["model_dict"])
-    model.eval()
-    likelihood.eval()
-
-    pred_dist = modelToPredMVN(
-        model,
-        likelihood,
-        normalized_all_data,
-        slope=transform.transform_y.slope,
-        intercept=transform.transform_y.intercept,
-    )
-    pred_data = DataValues(all_data.X, pred_dist.mean, pred_dist.variance, all_data.E)
-    good_bin_mask = all_data.Y > 50
-    global_chi2_bins = chi2Bins(pred_data.Y, all_data.Y, all_data.V, good_bin_mask)
-    blinded_chi2_bins = chi2Bins(pred_data.Y, all_data.Y, all_data.V, bm)
-
-    return all_data, pred_dist
+    good_bin_mask = h > 10
+    global_chi2_bins = chi2Bins(pred.mean, h, torch.sqrt(h), good_bin_mask)
+    print(global_chi2_bins)

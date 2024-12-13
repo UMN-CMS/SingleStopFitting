@@ -1,8 +1,7 @@
 import copy
 
+import fitting.regression as regression
 import torch
-
-from .regression import DataValues
 
 
 class LinearTransform:
@@ -68,10 +67,10 @@ class DataTransformation:
             self.transform_y.transformVariances(V),
         )
 
-    def transform(self, dv: DataValues) -> DataValues:
+    def transform(self, dv):
         E, X = self.transformX(dv.E, dv.X)
         Y, V = self.transformY(dv.Y, dv.V)
-        return DataValues(X, Y, V, E)
+        return regression.DataValues(X, Y, V, E)
 
     def iTransformX(self, edges, X):
         return (
@@ -85,10 +84,10 @@ class DataTransformation:
             self.transform_y.iTransformVariances(V),
         )
 
-    def iTransform(self, dv: DataValues) -> DataValues:
+    def iTransform(self, dv):
         E, X = self.iTransformX(dv.E, dv.X)
         Y, V = self.iTransformY(dv.Y, dv.V)
-        return DataValues(X, Y, V, E)
+        return regression.DataValues(X, Y, V, E)
 
     def __repr__(self):
         return f"DataTransformation({self.transform_x}, {self.transform_y})"
@@ -112,7 +111,7 @@ def getNormalizationTransform(dv, scale=1.0) -> DataTransformation:
     # transform_y = LinearTransform(scale * (max_y - min_y), min_y)
     transform_y = LinearTransform(scale * std_y, mean_y)
 
-    #transform_y = LinearTransform(torch.tensor([1.0]), torch.tensor([1.0]))
+    # transform_y = LinearTransform(torch.tensor([1.0]), torch.tensor([1.0]))
     # transform_y = LinearTransform(scale * value_scale, min_y)
 
     return DataTransformation(transform_x, transform_y)
