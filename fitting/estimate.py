@@ -185,6 +185,7 @@ def estimateSingle2D(
     background_path,
     signal_path,
     fit_region,
+    fit_region_upper,
     signal_name,
     signal_selection,
     background_name,
@@ -200,10 +201,17 @@ def estimateSingle2D(
         background = pkl.load(f)
 
     bkg_hist = background
-    bkg_hist = bkg_hist[hist.loc(fit_region[0]) :, hist.loc(fit_region[1]) :]
+    bkg_hist = bkg_hist[
+        hist.loc(fit_region[0]) : hist.loc(fit_region_upper[0]),
+        hist.loc(fit_region[1]) : hist.loc(fit_region_upper[1]),
+    ]
+
     signal_hist = signal312[signal_name, signal_selection]["hist_collection"][
         "histogram"
-    ]["central", ...][hist.loc(fit_region[0]) :, hist.loc(fit_region[1]) :]
+    ]["central", ...][
+        hist.loc(fit_region[0]) : hist.loc(fit_region_upper[0]),
+        hist.loc(fit_region[1]) : hist.loc(fit_region_upper[1]),
+    ]
 
     doRegressionForSignal(
         signal_name,
@@ -214,7 +222,6 @@ def estimateSingle2D(
         use_cuda=use_cuda,
     )
     plt.close("all")
-
 
 
 def makeSimulatedBackground(inhist, model_class, outdir, num=10):
@@ -264,6 +271,14 @@ def parse_arguments():
         nargs="*",
         required=False,
     )
+    parser.add_argument(
+        "-u",
+        "--upper-bounds",
+        type=float,
+        help="Lower bounds for the histgram",
+        nargs="*",
+        required=False,
+    )
     parser.add_argument("-r", "--region", type=str, help="Region", required=True)
     parser.add_argument("--cuda", action="store_true", help="Use cuda", default=False)
 
@@ -293,6 +308,7 @@ def main():
             background_path=args.background,
             signal_path=args.signal,
             fit_region=args.lower_bounds,
+            fit_region_upper=args.upper_bounds,
             signal_name=args.name,
             signal_selection=args.region,
             background_name=None,
@@ -300,6 +316,7 @@ def main():
             base_dir=args.outdir,
             use_cuda=args.cuda,
         )
+
 
 if __name__ == "__main__":
     main()
