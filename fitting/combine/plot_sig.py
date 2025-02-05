@@ -30,7 +30,16 @@ def main():
     # pm = ax.pcolormesh(grid_x, grid_y, grid_z)
     pm = ax.scatter(xyz[:,0], xyz[:,1], c=xyz[:,2], s=200)
 
-    fig.colorbar(pm, ax=ax)
+    
+    ax.set_xlabel("$m_{\\tilde{t}}$")
+    ax.set_ylabel("$m_{\\tilde{\chi}}$")
+    ax.set_ylabel("$m_{\\tilde{\chi}}$")
+
+    mplhep.cms.lumitext(text="2018", ax=ax)
+    a, b, c = mplhep.cms.text(text="\nQCD Simulation", ax=ax, loc=2)
+
+    cbar = fig.colorbar(pm, ax=ax)
+    cbar.set_label("Expected Significance")
     fig.savefig("test.pdf")
 
 
