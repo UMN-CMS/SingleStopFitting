@@ -218,7 +218,7 @@ def optimizeHyperparams(
     train_data,
     iterations=200,
     bar=True,
-    lr=0.05,
+    lr=0.01,
     get_evidence=False,
     mll=None,
     chi2mask=None,
@@ -368,7 +368,7 @@ def doCompleteRegression(
         train = normalized_train_data
         norm_test = normalized_test_data
 
-    lr = 0.05
+    lr = 0.075
 
     likelihood = gpytorch.likelihoods.FixedNoiseGaussianLikelihood(
         noise=train.V,
@@ -407,7 +407,7 @@ def doCompleteRegression(
         likelihood,
         train,
         bar=False,
-        iterations=80,
+        iterations=400,
         lr=lr,
         get_evidence=True,
         chi2mask=train_data.Y > min_counts,

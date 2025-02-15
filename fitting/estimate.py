@@ -48,7 +48,7 @@ def diagnostics(save_dir, trained_model):
         all_data.X, pred_dist.mean, pred_dist.variance, all_data.E
     )
 
-    train_mask = trained_model.blind_mask
+    train_mask = trained_model.blind_mask or torch.full_like(all_data.Y,fill_value=True, dtype=bool)
 
     global_chi2_bins = chi2Bins(pred_data.Y, all_data.Y, all_data.V)
     # good_bin_mask = all_data.Y > min_counts
@@ -62,6 +62,8 @@ def diagnostics(save_dir, trained_model):
 
     save_dir = Path(save_dir)
     save_dir.mkdir(exist_ok=True, parents=True)
+
+        
 
     diagnostic_plots = makeDiagnosticPlots(
         pred_data,
@@ -224,15 +226,16 @@ def estimateSingle2D(
     plt.close("all")
 
 
-def makeSimulatedBackground(inhist, model_class, outdir, num=10):
+def makeSimulatedBackground(inhist, model_class, outdir, use_cuda=True, num=10):
     trained_model = regression.doCompleteRegression(
-        inhist, None, model_class, min_counts=0
+        inhist, None, model_class, min_counts=0, use_cuda=use_cuda,
     )
     all_data, pred_dist = regression.getPrediction(trained_model)
     poiss = torch.distributions.Poisson(torch.clamp(pred_dist.mean, min=0))
 
     outdir = Path(outdir)
     outdir.mkdir(exist_ok=True, parents=True)
+    torch.save(trained_model, outdir / "simulated_trained_model.pth")
     for i in range(num):
         sampled = poiss.sample()
         vals = dataToHist(all_data.X, sampled, all_data.E, sampled)
