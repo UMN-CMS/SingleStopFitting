@@ -50,12 +50,13 @@ DataValues = namedtuple("DataValues", "X Y V E")
 
 @dataclass
 class TrainedModel:
-    model_class: str
+    model_name: str
+    model_dict: dict
+
     input_data: hist.Hist
     domain_mask: torch.Tensor
     blind_mask: torch.Tensor
     transform: torch.Tensor
-    model_dict: dict
     metadata: dict
 
 
@@ -113,7 +114,7 @@ def getPrediction(bkg_data, other_data=None):
     blinded_chi2_bins = chi2Bins(pred_data.Y, all_data.Y, all_data.V, bm)
     print(global_chi2_bins)
 
-    return all_data, pred_dist
+    return model, transform, all_data, pred_dist
 
 
 @dataclass
@@ -310,7 +311,7 @@ def getBlindedMask(inputs, mask_func):
     return mask
 
 
-def histToData(inhist, window_func, min_counts=10, domain_mask_cut=None):
+def histToData(inhist, window_func, min_counts=1000, domain_mask_cut=None):
     train_data, window_mask, *_ = regression.makeRegressionData(
         inhist,
         window_func,
@@ -368,7 +369,6 @@ def doCompleteRegression(
         train = normalized_train_data
         norm_test = normalized_test_data
 
-    lr = 0.075
 
     likelihood = gpytorch.likelihoods.FixedNoiseGaussianLikelihood(
         noise=train.V,
@@ -402,12 +402,13 @@ def doCompleteRegression(
         # chi2 = chi2Bins(Y, bpred_mean, output.variance, mask)
         return chi2
 
+    lr = 0.0025
     model, likelihood, evidence = optimizeHyperparams(
         model,
         likelihood,
         train,
         bar=False,
-        iterations=400,
+        iterations=300,
         lr=lr,
         get_evidence=True,
         chi2mask=train_data.Y > min_counts,

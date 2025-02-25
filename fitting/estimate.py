@@ -43,12 +43,15 @@ def saveDiagnosticPlots(plots, save_dir):
 
 
 def diagnostics(save_dir, trained_model):
-    all_data, pred_dist = regression.getPrediction(trained_model)
+    model, transform, all_data, pred_dist = regression.getPrediction(trained_model)
     pred_data = regression.DataValues(
         all_data.X, pred_dist.mean, pred_dist.variance, all_data.E
     )
 
-    train_mask = trained_model.blind_mask or torch.full_like(all_data.Y,fill_value=True, dtype=bool)
+    if trained_model.blind_mask is not None:
+        train_mask = trained_model.blind_mask
+    else:
+        train_mask = torch.full_like(all_data.Y, fill_value=True, dtype=bool)
 
     global_chi2_bins = chi2Bins(pred_data.Y, all_data.Y, all_data.V)
     # good_bin_mask = all_data.Y > min_counts
@@ -62,8 +65,6 @@ def diagnostics(save_dir, trained_model):
 
     save_dir = Path(save_dir)
     save_dir.mkdir(exist_ok=True, parents=True)
-
-        
 
     diagnostic_plots = makeDiagnosticPlots(
         pred_data,
@@ -83,25 +84,23 @@ def doRegressionForSignal(
     save_dir,
     signal_injections=None,
     mean=None,
+    min_counts=0,
     use_cuda=False,
+    window_spread=1.0,
 ):
     print(f"Signal Name: {signal_name}")
     logging.info(f"Signal is: {signal_name}")
-
     inducing_ratio = 4
     signal_injections = signal_injections or [0.0, 1.0, 4.0, 16.0]
 
-    dim = len(bkg_hist.axes)
-
     if signal_hist:
         signal_regression_data, *_ = regression.makeRegressionData(signal_hist)
+        print(window_spread)
         try:
             if dim == 2:
-                window = makeWindow2D(signal_regression_data, spread=1.0)
+                window = makeWindow2D(signal_regression_data, spread=window_spread)
                 if torch.any(window.center < 0.0) or torch.any(window.center > 1.0):
                     window = None
-            elif dim == 1:
-                window = makeWindow1D(signal_regression_data, spread=1.3)
         except (scipy.optimize.OptimizeWarning, RuntimeError):
             window = None
 
@@ -117,6 +116,7 @@ def doRegressionForSignal(
     # if sig_dir.exists():
     #       print(f"Already have {sig_dir}")
     sig_dir.mkdir(exist_ok=True, parents=True)
+
     if signal_hist:
         torch.save(sd, sig_dir / "signal_data.pth")
         if dim == 1:
@@ -125,14 +125,12 @@ def doRegressionForSignal(
             window_plots = windowPlots2D(signal_regression_data, window)
         for name, (fig, _) in window_plots.items():
             fig.savefig(sig_dir / f"{name}.pdf")
+
     if window is None:
         print(f"COULD NOT FIND VALID WINDOW FOR SIGNAL {signal_name}")
         return
 
-    if dim == 1:
-        model = models.NonStatParametric1D
-    else:
-        model = models.NonStatParametric2D
+    model = models.MyNNRBFModel2D
 
     for r in signal_injections:
         print(f"Performing estimation for signal {signal_name}.")
@@ -143,6 +141,7 @@ def doRegressionForSignal(
             print(f"Injecting background with signals strength {round(r,3)}")
             to_estimate = bkg_hist + r * signal_hist
         else:
+            print(f"Using raw background")
             to_estimate = bkg_hist
 
         trained_model = regression.doCompleteRegression(
@@ -151,7 +150,7 @@ def doRegressionForSignal(
             model_class=model,
             mean=mean,
             domain_mask_function=None if dim == 2 else None,
-            min_counts=10,
+            min_counts=min_counts,
             use_cuda=use_cuda,
         )
         diagnostics(save_dir, trained_model)
@@ -186,12 +185,9 @@ def doEstimationForSignals(
 def estimateSingle2D(
     background_path,
     signal_path,
-    fit_region,
-    fit_region_upper,
     signal_name,
     signal_selection,
     background_name,
-    background_selection,
     base_dir,
     use_cuda=False,
 ):
@@ -203,16 +199,16 @@ def estimateSingle2D(
         background = pkl.load(f)
 
     bkg_hist = background
-    bkg_hist = bkg_hist[
-        hist.loc(fit_region[0]) : hist.loc(fit_region_upper[0]),
-        hist.loc(fit_region[1]) : hist.loc(fit_region_upper[1]),
-    ]
+    bkg_hist = bkg_hist
+    a1, a2 = bkg_hist.axes
+    a1_min, a1_max = a1.edges.min(), a1.edges.max()
+    a2_min, a2_max = a2.edges.min(), a2.edges.max()
 
     signal_hist = signal312[signal_name, signal_selection]["hist_collection"][
         "histogram"
     ]["central", ...][
-        hist.loc(fit_region[0]) : hist.loc(fit_region_upper[0]),
-        hist.loc(fit_region[1]) : hist.loc(fit_region_upper[1]),
+        hist.loc(a1_min) : hist.loc(a1_max),
+        hist.loc(a2_min) : hist.loc(a2_max),
     ]
 
     doRegressionForSignal(
@@ -228,9 +224,13 @@ def estimateSingle2D(
 
 def makeSimulatedBackground(inhist, model_class, outdir, use_cuda=True, num=10):
     trained_model = regression.doCompleteRegression(
-        inhist, None, model_class, min_counts=0, use_cuda=use_cuda,
+        inhist,
+        None,
+        model_class,
+        use_cuda=use_cuda,
+        min_counts=0,
     )
-    all_data, pred_dist = regression.getPrediction(trained_model)
+    model, transform, all_data, pred_dist = regression.getPrediction(trained_model)
     poiss = torch.distributions.Poisson(torch.clamp(pred_dist.mean, min=0))
 
     outdir = Path(outdir)
@@ -266,59 +266,27 @@ def parse_arguments():
     parser.add_argument(
         "-n", "--name", type=str, help="Name for the signal", required=True
     )
-    parser.add_argument(
-        "-l",
-        "--lower-bounds",
-        type=float,
-        help="Lower bounds for the histgram",
-        nargs="*",
-        required=False,
-    )
-    parser.add_argument(
-        "-u",
-        "--upper-bounds",
-        type=float,
-        help="Lower bounds for the histgram",
-        nargs="*",
-        required=False,
-    )
     parser.add_argument("-r", "--region", type=str, help="Region", required=True)
     parser.add_argument("--cuda", action="store_true", help="Use cuda", default=False)
-
-    parser.add_argument(
-        "-d",
-        "--dimension",
-        type=int,
-        help="dimenstion",
-        default=2,
-    )
 
     return parser.parse_args()
 
 
 def main():
-    # import warnings
-    # warnings.filterwarnings('error')
     mpl.use("Agg")
     mplhep.style.use("CMS")
-    # region_2d = (slice(hist.loc(925), None), slice(hist.loc(0.25), None))
-    # region_1d = (slice(hist.loc(500), None),)
     args = parse_arguments()
     print(args)
 
-    if args.dimension == 2:
-        estimateSingle2D(
-            background_path=args.background,
-            signal_path=args.signal,
-            fit_region=args.lower_bounds,
-            fit_region_upper=args.upper_bounds,
-            signal_name=args.name,
-            signal_selection=args.region,
-            background_name=None,
-            background_selection=args.region,
-            base_dir=args.outdir,
-            use_cuda=args.cuda,
-        )
+    estimateSingle2D(
+        background_path=args.background,
+        signal_path=args.signal,
+        signal_name=args.name,
+        signal_selection=args.region,
+        background_name=None,
+        base_dir=args.outdir,
+        use_cuda=args.cuda,
+    )
 
 
 if __name__ == "__main__":

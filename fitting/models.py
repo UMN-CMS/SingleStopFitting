@@ -1,5 +1,6 @@
 import math
 
+
 import gpytorch
 import torch
 from gpytorch.variational import CholeskyVariationalDistribution, VariationalStrategy
@@ -136,9 +137,8 @@ class GeneralRBF(RotMixin, gpytorch.kernels.RBFKernel):
     def post_function(self, dist_mat):
         return gpytorch.kernels.rbf_kernel.postprocess_rbf(dist_mat)
 
-    def __init__(self, train_x, train_y, likelihood, *args, **kwargs):
-        super(RotMixin,self).__init__(train_x, train_y, *args,**kwargs)
-        
+    # def __init__(self, train_x, train_y, likelihood, *args, **kwargs):
+    #     super(RotMixin,self).__init__(train_x, train_y, *args,**kwargs)
 
 
 class FunctionRBF(GeneralRBF):
@@ -568,6 +568,7 @@ class RBFLayer(torch.nn.Module):
         self.centers = torch.nn.Parameter(torch.rand(count, dim))
 
     def forward(self, vals):
+        # print(torch.unsqueeze(vals, 1).shape)
         return torch.exp(
             -((torch.unsqueeze(vals, 1) - self.centers) / (2 * self.length_scales))
             .pow(2)
@@ -583,7 +584,10 @@ class NonStatKernel(gpytorch.kernels.Kernel):
         self.pre_transform = RBFLayer(dim, count)
         self.trans = torch.nn.Linear(count, 1, bias=bias)
         if base_kernel is None:
-            base_kernel = gpytorch.kernels.RBFKernel(ard_num_dims=dim)
+            # base_kernel = gpytorch.kernels.RBFKernel(ard_num_dims=dim)
+            # base_kernel = GeneralRBF(ard_num_dims=dim)
+            # base_kernel = NNRBFKernel(odim=1,idim=dim, layer_sizes=(4,4))
+            base_kernel = NNRBFKernel(odim=1, idim=dim, layer_sizes=(2,))
         self.base_kernel = base_kernel
 
     def forward(self, x1, x2, diag=False, **params):
@@ -594,6 +598,8 @@ class NonStatKernel(gpytorch.kernels.Kernel):
         r = self.base_kernel.forward(x1, x2, diag=diag, **params)
         v1 = self.trans(self.pre_transform(x1))
         v2 = self.trans(self.pre_transform(x2))
+        # print(v1)
+        # print(v2)
         if diag:
             o = torch.squeeze(v1 * v2)
         else:
@@ -607,12 +613,12 @@ class NonStatParametric2D(gpytorch.models.ExactGP):
         super().__init__(train_x, train_y, likelihood)
         self.mean_module = gpytorch.means.ConstantMean()
         self.base_covar_module = (
-            NonStatKernel(ard_num_dims=2)
-            + NonStatKernel(ard_num_dims=2)
-            + gpytorch.kernels.ScaleKernel(gpytorch.kernels.RBFKernel(ard_num_dims=2))
+            NonStatKernel(ard_num_dims=2, count=5)
+            + NonStatKernel(ard_num_dims=2, count=5)
+            + gpytorch.kernels.RBFKernel(ard_num_dims=2)
         )
         if num_inducing is None:
-            ind = train_x[::4].clone()
+            ind = train_x[::2].clone()
         else:
             ind = train_x[:num_inducing].clone()
         self.covar_module = gpytorch.kernels.InducingPointKernel(
@@ -665,34 +671,84 @@ class NonStatParametric1D(gpytorch.models.ExactGP):
 class MyNNRBFModel2D(gpytorch.models.ExactGP):
     def __init__(self, train_x, train_y, likelihood, num_inducing=None):
         super().__init__(train_x, train_y, likelihood)
-        self.feature_extractor = LargeFeatureExtractor(
-            odim=2, idim=2, layer_sizes=(100,50)
-        )
+        # self.feature_extractor = LargeFeatureExtractor(
+        #     odim=2, idim=2, layer_sizes=(40, 20)
+        # )
         self.scale_to_bounds = gpytorch.utils.grid.ScaleToBounds(-1.0, 1.0)
 
         if num_inducing is None:
-            ind = train_x[::2].clone()
+            ind = train_x[::4].clone()
         else:
             ind = train_x[:num_inducing].clone()
 
-        print(ind.shape)
         self.mean_module = gpytorch.means.ConstantMean()
+        # self.base_covar_module = gpytorch.kernels.ScaleKernel(
+        #     NNRBFKernel(idim=2, odim=2, layer_sizes=(32, 16))
+        # )
+
         self.base_covar_module = gpytorch.kernels.ScaleKernel(
-            gpytorch.kernels.RBFKernel(ard_num_dims=2)
+            NNMaternKernel(idim=2, odim=2, layer_sizes=(32, 16)), mu=2.5
         )
+
+
+        # print(self.base_covar_module.base_kernel.lengthscale)
+        # torch.nn.init.uniform_(
+        #     self.base_covar_module.base_kernel.raw_lengthscale, 0.1, 1.0
+        # )
+        # print(self.base_covar_module.base_kernel.lengthscale)
+
         self.covar_module = gpytorch.kernels.InducingPointKernel(
             self.base_covar_module,
             likelihood=likelihood,
             inducing_points=ind,
         )
 
-        def init_weights(m):
-            if isinstance(m, torch.nn.Linear):
-                torch.nn.init.xavier_uniform_(m.weight)
+        # def init_weights(m):
+        #     if isinstance(m, torch.nn.Linear):
+        #         torch.nn.init.xavier_uniform_(m.weight)
 
         # self.covar_module.inducing_points.requires_grad_(False)
 
-        self.apply(init_weights)
+        # self.apply(init_weights)
+
+    def forward(self, x):
+        # x = self.feature_extractor(x)
+        # x = self.scale_to_bounds(x)
+        covar_x = self.covar_module(x)
+        mean_x = self.mean_module(x)
+        return gpytorch.distributions.MultivariateNormal(mean_x, covar_x)
+
+
+class MyNNSpectralModel2D(gpytorch.models.ExactGP):
+    def __init__(self, train_x, train_y, likelihood, num_inducing=None):
+        super().__init__(train_x, train_y, likelihood)
+        self.feature_extractor = LargeFeatureExtractor(
+            odim=2, idim=2, layer_sizes=(40, 20)
+        )
+        self.scale_to_bounds = gpytorch.utils.grid.ScaleToBounds(-1.0, 1.0)
+
+        if num_inducing is None:
+            ind = train_x[::4].clone()
+        else:
+            ind = train_x[:num_inducing].clone()
+
+        self.mean_module = gpytorch.means.ConstantMean()
+        self.base_covar_module = gpytorch.kernels.SpectralMixtureKernel(n_mixtures=4)
+        self.base_covar_module.initialize_from_data(train_x, train_y)
+
+        self.covar_module = gpytorch.kernels.InducingPointKernel(
+            self.base_covar_module,
+            likelihood=likelihood,
+            inducing_points=ind,
+        )
+
+        # def init_weights(m):
+        #     if isinstance(m, torch.nn.Linear):
+        #         torch.nn.init.xavier_uniform_(m.weight)
+
+        # self.covar_module.inducing_points.requires_grad_(False)
+
+        # self.apply(init_weights)
 
     def forward(self, x):
         x = self.feature_extractor(x)

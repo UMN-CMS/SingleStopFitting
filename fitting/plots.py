@@ -120,7 +120,7 @@ def makeDiagnosticPlots2D(pred, raw_test, raw_train, mask=None, inducing_points=
 
     def addInducing(ax):
         if inducing_points is not None:
-                ax.scatter(inducing_points[:, 0], inducing_points[:, 1], c="red", s=1)
+            ax.scatter(inducing_points[:, 0], inducing_points[:, 1], c="red", s=1)
 
     pred_mean = pred.Y
     pred_variances = pred.V
@@ -182,9 +182,7 @@ def makeDiagnosticPlots2D(pred, raw_test, raw_train, mask=None, inducing_points=
     ret["relative_uncertainty"] = (fig, ax)
 
     fig, ax = plt.subplots(layout="tight")
-    f = plotRaw(
-        ax, raw_test.E, raw_test.X, torch.sqrt(raw_test.V) / raw_test.Y
-    )
+    f = plotRaw(ax, raw_test.E, raw_test.X, torch.sqrt(raw_test.V) / raw_test.Y)
     ax.set_title("Relative Stat Uncertainty (std/val)")
     addWindow(ax)
     ret["relative_stat_uncertainty"] = (fig, ax)
@@ -214,3 +212,13 @@ def makeNNPlots(model, test_data):
     ax.scatter(T[:, 0], T[:, 1], c=test_data.Y, cmap="hsv")
     ret["NN"] = (fig, ax)
     return ret
+
+
+def makeCovariancePlots(model, transform, data, point):
+    mod = model.covar_module
+    p = transform.transform_x.transformData(torch.tensor(point))
+    d = transform.transform(data)
+    vals = model.covar_module(p.unsqueeze(0), d.X).evaluate().detach()[0]
+    fig, ax = plt.subplots(layout="tight")
+    f = plotRaw(ax, data.E, data.X, vals)
+    return fig, ax
