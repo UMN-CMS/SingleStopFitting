@@ -54,7 +54,7 @@ def main():
         area = getMassArea(s.stop)
         for c in cats:
             f = getFileNoCase(path, args.signal.format(c,c))
-            cols = ["signal_" + "_".join(map(str,s)) + "_" + c, str(f)]
+            cols = ["signal_" + "_".join(map(str,s)), c, str(f)]
             cols.append(args.background.format(c, area))
             print(" ".join(cols))
 

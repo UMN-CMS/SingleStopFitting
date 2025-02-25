@@ -82,6 +82,7 @@ def doRegressionForSignal(
     signal_hist,
     bkg_hist,
     save_dir,
+    subsig_path,
     signal_injections=None,
     mean=None,
     min_counts=0,
@@ -91,16 +92,14 @@ def doRegressionForSignal(
     print(f"Signal Name: {signal_name}")
     logging.info(f"Signal is: {signal_name}")
     inducing_ratio = 4
-    signal_injections = signal_injections or [0.0, 1.0, 4.0, 16.0]
 
     if signal_hist:
         signal_regression_data, *_ = regression.makeRegressionData(signal_hist)
         print(window_spread)
         try:
-            if dim == 2:
-                window = makeWindow2D(signal_regression_data, spread=window_spread)
-                if torch.any(window.center < 0.0) or torch.any(window.center > 1.0):
-                    window = None
+            window = makeWindow2D(signal_regression_data, spread=window_spread)
+            if torch.any(window.center < 0.0) or torch.any(window.center > 1.0):
+                window = None
         except (scipy.optimize.OptimizeWarning, RuntimeError):
             window = None
 
@@ -112,17 +111,14 @@ def doRegressionForSignal(
     else:
         window = None
 
-    sig_dir = save_dir / (signal_name if signal_name else "NoSignal")
+    sig_dir = save_dir / (signal_name if signal_name else "NoSignal") / subsig_path
     # if sig_dir.exists():
     #       print(f"Already have {sig_dir}")
     sig_dir.mkdir(exist_ok=True, parents=True)
 
     if signal_hist:
         torch.save(sd, sig_dir / "signal_data.pth")
-        if dim == 1:
-            fig, ax = windowPlot1D(signal_regression_data, window)
-        else:
-            window_plots = windowPlots2D(signal_regression_data, window)
+        window_plots = windowPlots2D(signal_regression_data, window)
         for name, (fig, _) in window_plots.items():
             fig.savefig(sig_dir / f"{name}.pdf")
 
@@ -149,7 +145,7 @@ def doRegressionForSignal(
             window,
             model_class=model,
             mean=mean,
-            domain_mask_function=None if dim == 2 else None,
+            domain_mask_function=None,
             min_counts=min_counts,
             use_cuda=use_cuda,
         )
@@ -174,9 +170,9 @@ def doEstimationForSignals(
             bkg_hist,
             base_dir,
             mean=mean,
-            # signal_injections=[0.0, 1.0, 4.0, 16.0],
-            signal_injections=[0.0, 1.0],
-            # signal_injections=[0.0],
+            signal_injections=signal_injections,
+            # signal_injections=[0.0, 1.0],
+            # # signal_injections=[0.0],
         )
 
         plt.close("all")
@@ -189,6 +185,7 @@ def estimateSingle2D(
     signal_selection,
     background_name,
     base_dir,
+    sub_sig_path,
     use_cuda=False,
 ):
     base_dir = Path(base_dir)
@@ -204,9 +201,7 @@ def estimateSingle2D(
     a1_min, a1_max = a1.edges.min(), a1.edges.max()
     a2_min, a2_max = a2.edges.min(), a2.edges.max()
 
-    signal_hist = signal312[signal_name, signal_selection]["hist_collection"][
-        "histogram"
-    ]["central", ...][
+    signal_hist = signal312[signal_name, signal_selection]["hist"][
         hist.loc(a1_min) : hist.loc(a1_max),
         hist.loc(a2_min) : hist.loc(a2_max),
     ]
@@ -216,7 +211,8 @@ def estimateSingle2D(
         signal_hist,
         bkg_hist,
         base_dir,
-        signal_injections=[0.0, 1.0],
+        sub_sig_path,
+        signal_injections=[0.0, 1.0, 4.0, 16.0],
         use_cuda=use_cuda,
     )
     plt.close("all")
@@ -264,6 +260,9 @@ def parse_arguments():
         "-s", "--signal", type=str, help="Input path for the signal", required=True
     )
     parser.add_argument(
+        "--sub-sig-path", type=str, help="", required=True
+    )
+    parser.add_argument(
         "-n", "--name", type=str, help="Name for the signal", required=True
     )
     parser.add_argument("-r", "--region", type=str, help="Region", required=True)
@@ -283,6 +282,7 @@ def main():
         signal_path=args.signal,
         signal_name=args.name,
         signal_selection=args.region,
+        sub_sig_path=args.sub_sig_path,
         background_name=None,
         base_dir=args.outdir,
         use_cuda=args.cuda,

@@ -50,7 +50,7 @@ DataValues = namedtuple("DataValues", "X Y V E")
 
 @dataclass
 class TrainedModel:
-    model_name: str
+    model_class: str
     model_dict: dict
 
     input_data: hist.Hist
