@@ -88,7 +88,9 @@ def doRegressionForSignal(
     min_counts=0,
     use_cuda=False,
     window_spread=1.0,
+    add_metadata=None,
 ):
+    add_metadata = add_metadata or {}
     print(f"Signal Name: {signal_name}")
     logging.info(f"Signal is: {signal_name}")
     inducing_ratio = 4
@@ -151,6 +153,7 @@ def doRegressionForSignal(
         )
         diagnostics(save_dir, trained_model)
         trained_model.metadata.update({"signal_injected": r})
+        trained_model.metadata.update(add_metadata)
         torch.save(trained_model, save_dir / "bkg_estimation_result.pth")
         plt.close("all")
 
@@ -164,6 +167,7 @@ def doEstimationForSignals(
 ):
     base_dir = Path(base_dir)
     for signal_name, signal_hist in signals:
+        meta = {"signal_name": signal_name}
         doRegressionForSignal(
             signal_name,
             signal_hist,
@@ -173,6 +177,7 @@ def doEstimationForSignals(
             signal_injections=signal_injections,
             # signal_injections=[0.0, 1.0],
             # # signal_injections=[0.0],
+            add_metadata=meta,
         )
 
         plt.close("all")
@@ -259,9 +264,7 @@ def parse_arguments():
     parser.add_argument(
         "-s", "--signal", type=str, help="Input path for the signal", required=True
     )
-    parser.add_argument(
-        "--sub-sig-path", type=str, help="", required=True
-    )
+    parser.add_argument("--sub-sig-path", type=str, help="", required=True)
     parser.add_argument(
         "-n", "--name", type=str, help="Name for the signal", required=True
     )

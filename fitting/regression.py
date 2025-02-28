@@ -100,7 +100,6 @@ def getPrediction(bkg_data, other_data=None):
     model.eval()
     likelihood.eval()
 
-
     pred_dist = modelToPredMVN(
         model,
         likelihood,
@@ -109,8 +108,8 @@ def getPrediction(bkg_data, other_data=None):
         intercept=transform.transform_y.intercept,
     )
     pred_data = DataValues(all_data.X, pred_dist.mean, pred_dist.variance, all_data.E)
-    good_bin_mask = all_data.Y > 10
-    global_chi2_bins = chi2Bins(pred_data.Y, all_data.Y, all_data.V, good_bin_mask)
+    #good_bin_mask = all_data.Y > bkg_data.min_counts
+    global_chi2_bins = chi2Bins(pred_data.Y, all_data.Y, all_data.V, dm)
     blinded_chi2_bins = chi2Bins(pred_data.Y, all_data.Y, all_data.V, bm)
     print(global_chi2_bins)
 
@@ -344,9 +343,7 @@ def doCompleteRegression(
 
     if isinstance(inhist, DataValues):
         test_data = inhist
-        train_data = inhist.getMasked(
-            getBlindedMask(train_data.X, window_func)
-        )
+        train_data = inhist.getMasked(getBlindedMask(train_data.X, window_func))
         domain_mask = torch.ones_like(train_data.Y, dtype=bool)
     else:
         train_data, test_data, domain_mask = histToData(
@@ -368,7 +365,6 @@ def doCompleteRegression(
     else:
         train = normalized_train_data
         norm_test = normalized_test_data
-
 
     likelihood = gpytorch.likelihoods.FixedNoiseGaussianLikelihood(
         noise=train.V,
