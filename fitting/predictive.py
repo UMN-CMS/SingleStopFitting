@@ -49,9 +49,12 @@ def makePosteriorPred(
     pred = predictive(bkg_mvn)
     summ = summary(pred)
 
-    stat_pulls = (bkg_mvn.mean - test_data.Y) / torch.sqrt(test_data.V)
-    post_pulls = (bkg_mvn.mean - test_data.Y) / summ["observed"]["std"]
-    pred_only_pulls = (bkg_mvn.mean - test_data.Y) / torch.sqrt(bkg_mvn.variance)
+    stat_pulls = (test_data.Y - bkg_mvn.mean) / torch.sqrt(test_data.V)
+    post_pulls = (test_data.Y - bkg_mvn.mean) / summ["observed"]["std"]
+    pred_only_pulls = (test_data.Y - bkg_mvn.mean) / torch.sqrt(bkg_mvn.variance)
+
+    global_chi2_bins = chi2Bins(bkg_mvn.mean, test_data.Y, test_data.V)
+    blinded_chi2_bins = chi2Bins(bkg_mvn.mean, test_data.Y, test_data.V, mask)
 
     d = test_data.dim
 
@@ -64,6 +67,13 @@ def makePosteriorPred(
             poly = Polygon(points, edgecolor="green", linewidth=3, fill=False)
             ax.add_patch(poly)
 
+    def addChi2(ax):
+        mplhep.cms.text(
+            f"$\chi^2 Global = {global_chi2_bins:0.2f}$\n$\chi^2 Blind = {blinded_chi2_bins:0.2f}$",
+            loc=3,
+            fontsize=20,
+        )
+
     fig, ax = plt.subplots(layout="tight")
     ax.set_title("Relative Uncertainty In Pred")
     f = plotRaw(
@@ -73,6 +83,7 @@ def makePosteriorPred(
         torch.sqrt((bkg_mvn.variance)) / bkg_mvn.mean,
     )
     addWindow(ax)
+    addChi2(ax)
     ret["post_relative_uncertainty"] = (fig, ax)
 
     fig, ax = plt.subplots(layout="tight")
@@ -84,6 +95,7 @@ def makePosteriorPred(
         summ["observed"]["std"] / bkg_mvn.mean,
     )
     addWindow(ax)
+    addChi2(ax)
     ret["post_posterior_relative_uncertainty"] = (fig, ax)
 
     fig, ax = plt.subplots(layout="tight")
@@ -92,6 +104,7 @@ def makePosteriorPred(
     )
     ax.set_title("Pull Latent Only")
     addWindow(ax)
+    addChi2(ax)
     ret["post_pull_latent"] = (fig, ax)
 
     fig, ax = plt.subplots(layout="tight")
@@ -107,6 +120,7 @@ def makePosteriorPred(
         ax, test_data.E, test_data.X, post_pulls, cmap="coolwarm", cmin=-3, cmax=3
     )
     addWindow(ax)
+    addChi2(ax)
     ax.set_title("Pull Posterior")
     ret["post_pull_posterior"] = (fig, ax)
 
@@ -132,6 +146,7 @@ def makePosteriorPred(
     ax.set_xlabel(r"$\frac{N_{obs}-N_{pred}}{\sigma_{post}}$")
     ax.set_ylabel("Count")
     ax.legend()
+    addChi2(ax)
     ret["post_global_pred_pulls_hist"] = (fig, ax)
 
     fig, ax = plt.subplots(layout="tight")
@@ -142,6 +157,7 @@ def makePosteriorPred(
     ax.plot(X, Y, label="Unit Normal")
     ax.legend()
     ax.set_xlabel(r"$\frac{N_{obs}-N_{pred}}{\sigma_{post}}$")
+    addChi2(ax)
 
     ret["combo_pulls_hist"] = (fig, ax)
 
