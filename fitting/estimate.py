@@ -10,6 +10,7 @@ from typing import Any
 
 import numpy as np
 import scipy
+from .regression import DataValues
 
 import gpytorch
 import hist
@@ -21,7 +22,7 @@ from gpytorch.kernels import ScaleKernel as SK
 from rich import print
 
 from . import models, regression, transformations, windowing
-from .blinder import makeWindow1D, makeWindow2D, windowPlot1D, windowPlots2D
+from .blinder import GaussianWindow2D, MinYCut
 from .plots import makeDiagnosticPlots, makeNNPlots
 from .predictive import makePosteriorPred
 from .utils import chi2Bins, dataToHist, modelToPredMVN
@@ -44,9 +45,7 @@ def saveDiagnosticPlots(plots, save_dir):
 
 def diagnostics(save_dir, trained_model):
     model, transform, all_data, pred_dist = regression.getPrediction(trained_model)
-    pred_data = regression.DataValues(
-        all_data.X, pred_dist.mean, pred_dist.variance, all_data.E
-    )
+    pred_data = DataValues(all_data.X, pred_dist.mean, pred_dist.variance, all_data.E)
 
     if trained_model.blind_mask is not None:
         train_mask = trained_model.blind_mask
@@ -96,12 +95,12 @@ def doRegressionForSignal(
     inducing_ratio = 4
 
     if signal_hist:
-        signal_regression_data, *_ = regression.makeRegressionData(signal_hist)
+        signal_regression_data = DataValues.fromHistogram(signal_hist)
         print(window_spread)
         try:
-            window = makeWindow2D(signal_regression_data, spread=window_spread)
-            if torch.any(window.center < 0.0) or torch.any(window.center > 1.0):
-                window = None
+            window = GaussianWindow2D.fromData(
+                signal_regression_data, spread=window_spread
+            )
         except (scipy.optimize.OptimizeWarning, RuntimeError):
             window = None
 
@@ -118,11 +117,11 @@ def doRegressionForSignal(
     #       print(f"Already have {sig_dir}")
     sig_dir.mkdir(exist_ok=True, parents=True)
 
-    if signal_hist:
-        torch.save(sd, sig_dir / "signal_data.pth")
-        window_plots = windowPlots2D(signal_regression_data, window)
-        for name, (fig, _) in window_plots.items():
-            fig.savefig(sig_dir / f"{name}.pdf")
+    # if signal_hist:
+    #     torch.save(sd, sig_dir / "signal_data.pth")
+    #     window_plots = windowPlots2D(signal_regression_data, window)
+    #     for name, (fig, _) in window_plots.items():
+    #         fig.savefig(sig_dir / f"{name}.pdf")
 
     if window is None:
         print(f"COULD NOT FIND VALID WINDOW FOR SIGNAL {signal_name}")
@@ -144,11 +143,10 @@ def doRegressionForSignal(
 
         trained_model = regression.doCompleteRegression(
             to_estimate,
+            model,
+            MinYCut(min_y=10),
             window,
-            model_class=model,
-            mean=mean,
-            domain_mask_function=None,
-            min_counts=min_counts,
+            iterations=300,
             use_cuda=use_cuda,
         )
         diagnostics(save_dir, trained_model)

@@ -669,17 +669,15 @@ class NonStatParametric1D(gpytorch.models.ExactGP):
 
 
 class MyNNRBFModel2D(gpytorch.models.ExactGP):
-    def __init__(self, train_x, train_y, likelihood, num_inducing=None):
+    def __init__(self, train_x, train_y, likelihood, inducing_ratio=4):
         super().__init__(train_x, train_y, likelihood)
+        self.inducing_ratio = inducing_ratio
         # self.feature_extractor = LargeFeatureExtractor(
         #     odim=2, idim=2, layer_sizes=(40, 20)
         # )
         self.scale_to_bounds = gpytorch.utils.grid.ScaleToBounds(-1.0, 1.0)
 
-        if num_inducing is None:
-            ind = train_x[::4].clone()
-        else:
-            ind = train_x[:num_inducing].clone()
+        ind = train_x[:: self.inducing_ratio].clone()
 
         self.mean_module = gpytorch.means.ConstantMean()
         # self.base_covar_module = gpytorch.kernels.ScaleKernel(
@@ -689,7 +687,6 @@ class MyNNRBFModel2D(gpytorch.models.ExactGP):
         self.base_covar_module = gpytorch.kernels.ScaleKernel(
             NNMaternKernel(idim=2, odim=2, layer_sizes=(32, 16)), mu=2.5
         )
-
 
         # print(self.base_covar_module.base_kernel.lengthscale)
         # torch.nn.init.uniform_(

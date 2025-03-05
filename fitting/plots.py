@@ -222,3 +222,21 @@ def makeCovariancePlots(model, transform, data, point):
     fig, ax = plt.subplots(layout="tight")
     f = plotRaw(ax, data.E, data.X, vals)
     return fig, ax
+
+
+def windowPlots2D(signal_data, window, frac=None):
+    fig, ax = plt.subplots()
+    ret = {}
+    plotData(ax, signal_data)
+    if window is not None:
+        mask = window(signal_data.X)
+        squares = makeSquares(signal_data.X[mask], signal_data.E)
+        points = getPolyFromSquares(squares)
+        poly = Polygon(points, edgecolor="green", linewidth=3, fill=False)
+        ax.add_patch(poly)
+
+        figm, axm = plt.subplots()
+        plotRaw(axm, signal_data.E, signal_data.X, mask.to(torch.float64))
+        ret["mask"] = (figm, axm)
+    ret["sig_window"] = (fig, ax)
+    return ret

@@ -25,28 +25,6 @@ def rotationMatrix(theta):
     )
 
 
-def gaussian2D(X, amplitude, xo, yo, sigma_x, sigma_y, theta):
-    x, y = X[..., 0], X[..., 1]
-    a = (torch.cos(theta) ** 2) / (2 * sigma_x**2) + (torch.sin(theta) ** 2) / (
-        2 * sigma_y**2
-    )
-    b = -(torch.sin(2 * theta)) / (4 * sigma_x**2) + (torch.sin(2 * theta)) / (
-        4 * sigma_y**2
-    )
-    c = (torch.sin(theta) ** 2) / (2 * sigma_x**2) + (torch.cos(theta) ** 2) / (
-        2 * sigma_y**2
-    )
-    g = amplitude * torch.exp(
-        -(a * ((x - xo) ** 2) + 2 * b * (x - xo) * (y - yo) + c * ((y - yo) ** 2))
-    )
-    return g
-
-
-def gaussian1D(X, amplitude, xo, sigma_x):
-    g = amplitude * torch.exp(-(((X - xo) / sigma_x) ** 2))
-    return g.ravel()
-
-
 def numpyGaussian2D(X, amplitude, xo, yo, sigma_x, sigma_y, theta):
     x, y = X[..., 0], X[..., 1]
     a = (np.cos(theta) ** 2) / (2 * sigma_x**2) + (np.sin(theta) ** 2) / (
@@ -63,71 +41,21 @@ def numpyGaussian2D(X, amplitude, xo, yo, sigma_x, sigma_y, theta):
     )
     return g
 
-
-def numpyGaussian1D(X, amplitude, xo, sigma_x):
-    g = amplitude * np.exp(-(((X - xo) / sigma_x) ** 2))
-    return g.ravel()
-
-
-@dataclass
-class GaussianWindow1D:
-    amplitude: float
-    center: float
-    sigma: float
-
-    spread: float
-
-    normalization_scale: torch.Tensor
-
-    def __call__(self, X):
-        vals = self.vals(X)
-        one_point = self.vals(
-            self.normalization_scale * (self.center + self.spread * self.sigma)
-        )
-        mask = vals > one_point
-        return mask
-
-    def vals(self, X):
-        X = X / self.normalization_scale
-        v = gaussian1D(X, self.amplitude, self.center, self.sigma)
-        return v
-
-
-@dataclass
-class GaussianWindow2D:
-    amplitude: float
-    center: torch.Tensor
-    sigma: torch.Tensor
-    theta: float
-
-    spread: float
-
-    normalization_scale: torch.Tensor
-
-    def vals(self, X):
-        X = X / self.normalization_scale
-        v = gaussian2D(X, self.amplitude, *self.center, *self.sigma, self.theta)
-        return v
-
-    def __call__(self, X):
-        vals = self.vals(X)
-        rm = rotationMatrix(self.theta)
-        target = self.spread * (rm @ self.sigma) + self.center
-        one_point = self.vals(self.normalization_scale * target.unsqueeze(0))
-
-        mask = vals > one_point
-        return mask
-
-
-def makeWindow1D(signal_data, spread=1.0):
-    X = signal_data.X
-    s = X.max(dim=0).values
-    X = X / s
-    Y = signal_data.Y
-    popt, pcov = scipy.optimize.curve_fit(numpyGaussian1D, X, Y)
-    return GaussianWindow1D(
-        *[torch.Tensor([x]) for x in popt], torch.tensor([spread]), s
+def gaussian2D(X, amplitude, xo, yo, sigma_x, sigma_y, theta):
+    x, y = X[..., 0], X[..., 1]
+    a = (torch.cos(theta) ** 2) / (2 * sigma_x**2) + (torch.sin(theta) ** 2) / (
+        2 * sigma_y**2
     )
+    b = -(torch.sin(2 * theta)) / (4 * sigma_x**2) + (torch.sin(2 * theta)) / (
+        4 * sigma_y**2
+    )
+    c = (torch.sin(theta) ** 2) / (2 * sigma_x**2) + (torch.cos(theta) ** 2) / (
+        2 * sigma_y**2
+    )
+    g = amplitude * torch.exp(
+        -(a * ((x - xo) ** 2) + 2 * b * (x - xo) * (y - yo) + c * ((y - yo) ** 2))
+    )
+    return g
 
 
 def makeWindow2D(signal_data, spread=1.0):
@@ -152,31 +80,39 @@ def makeWindow2D(signal_data, spread=1.0):
     )
 
 
-def windowPlot1D(signal_data, window, frac=None):
-    fig, ax = plt.subplots()
-    plotData(ax, signal_data)
-    if window.center - window.axes / 2:
-        ax.axvline(window.center - window.axes, 0, 1, color="black")
-    if window.center + window.axes / 2:
-        ax.axvline(window.center + window.axes, 0, 1, color="black")
-    return fig, ax
+@dataclass
+class GaussianWindow2D:
+    amplitude: float
+    center: torch.Tensor
+    sigma: torch.Tensor
+    theta: float
+
+    spread: float
+
+    normalization_scale: torch.Tensor
+
+    def vals(self, X):
+        X = X / self.normalization_scale
+        v = gaussian2D(X, self.amplitude, *self.center, *self.sigma, self.theta)
+        return v
+
+    def __call__(self, X, Y=None):
+        vals = self.vals(X)
+        rm = rotationMatrix(self.theta)
+        target = self.spread * (rm @ self.sigma) + self.center
+        one_point = self.vals(self.normalization_scale * target.unsqueeze(0))
+
+        mask = vals > one_point
+        return mask
+
+    @staticmethod
+    def fromData(data, spread):
+        return makeWindow2D(data, spread)
 
 
-def windowPlots2D(signal_data, window, frac=None):
-    fig, ax = plt.subplots()
-    ret = {}
-    plotData(ax, signal_data)
-    if window is not None:
-        mask = window(signal_data.X)
-        squares = makeSquares(signal_data.X[mask], signal_data.E)
-        points = getPolyFromSquares(squares)
-        poly = Polygon(points, edgecolor="green", linewidth=3, fill=False)
-        ax.add_patch(poly)
+@dataclass
+class MinYCut:
+    min_y: float = 0
 
-        figm, axm = plt.subplots()
-        plotRaw(axm, signal_data.E, signal_data.X, mask.to(torch.float64))
-        ret["mask"] = (figm, axm)
-
-    ret["sig_window"] = (fig, ax)
-
-    return ret
+    def __call__(self, X, Y=None):
+        return Y > self.min_y

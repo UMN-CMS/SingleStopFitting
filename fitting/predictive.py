@@ -95,7 +95,6 @@ def makePosteriorPred(
         summ["observed"]["std"] / bkg_mvn.mean,
     )
     addWindow(ax)
-    addChi2(ax)
     ret["post_posterior_relative_uncertainty"] = (fig, ax)
 
     fig, ax = plt.subplots(layout="tight")
@@ -113,6 +112,7 @@ def makePosteriorPred(
     )
     ax.set_title("Pull Statistical")
     addWindow(ax)
+    addChi2(ax)
     ret["post_pull_statistical"] = (fig, ax)
 
     fig, ax = plt.subplots(layout="tight")
@@ -120,7 +120,6 @@ def makePosteriorPred(
         ax, test_data.E, test_data.X, post_pulls, cmap="coolwarm", cmin=-3, cmax=3
     )
     addWindow(ax)
-    addChi2(ax)
     ax.set_title("Pull Posterior")
     ret["post_pull_posterior"] = (fig, ax)
 
