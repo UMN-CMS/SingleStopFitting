@@ -67,9 +67,7 @@ def getPrediction(trained_model, other_data=None):
     hist = trained_model.input_data
     raw_regression_data = DataValues.fromHistogram(trained_model.input_data)
 
-    print(raw_regression_data.X.shape)
     bm = ~trained_model.blind_mask
-    print(torch.count_nonzero(bm))
     dm = trained_model.domain_mask
 
     if other_data is None:
@@ -316,7 +314,6 @@ def doCompleteRegression(
 ):
 
     all_data = DataValues.fromHistogram(histogram)
-    print(all_data.X.shape)
     domain_mask = domain_blinder(all_data.X, all_data.Y)
     test_data = all_data[domain_mask]
 
@@ -326,7 +323,6 @@ def doCompleteRegression(
     train_transform = transformations.getNormalizationTransform(train_data)
     normalized_train_data = train_transform.transform(train_data)
     normalized_test_data = train_transform.transform(test_data)
-    print(normalized_train_data.X.shape)
 
     if torch.cuda.is_available() and use_cuda:
         print("USING CUDA")
@@ -371,6 +367,4 @@ def doCompleteRegression(
         transform=train_transform,
         metadata={},
     )
-    #code.interact(local=dict(globals(), **locals()))
-
     return trained_model
