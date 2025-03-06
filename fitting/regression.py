@@ -15,8 +15,8 @@ import gpytorch
 import hist
 import torch
 
-from . import regression, transformations
-from .utils import dataToHist
+from . import transformations
+from .utils import dataToHist, computePosterior
 
 
 @dataclass
@@ -33,26 +33,36 @@ class TrainedModel:
     metadata: dict
 
 
-def loadModel(trained_Model, other_data=None):
-    model_class = trained_model.model_class
-    model_state = trained_model.model_state
-
+def getModelingData(trained_model, other_data=None):
     hist = trained_model.input_data
     raw_regression_data = DataValues.fromHistogram(trained_model.input_data)
-
-    bm = ~trained_model.blind_mask
     dm = trained_model.domain_mask
-
     if other_data is None:
         all_data = raw_regression_data.getMasked(dm)
     else:
         all_data = other_data
-    if bm is None:
+
+    if trained_model.blind_mask is not None:
+        print("HERE")
+        bm = trained_model.blind_mask
+        print(torch.count_nonzero(bm))
+    else:
         bm = torch.zeros_like(all_data.Y, dtype=bool)
+        print(torch.count_nonzero(bm))
 
-    blinded_data = all_data.getMasked(bm)
+    return all_data, bm
 
+
+def loadModel(trained_model, other_data=None):
+    model_class = trained_model.model_class
+    model_state = trained_model.model_state
+
+    all_data, bm = getModelingData(trained_model,other_data)
+    blinded_data = all_data.getMasked(~bm)
+
+    print(all_data.X.shape)
     print(blinded_data.X.shape)
+    print(torch.count_nonzero(~bm))
 
     transform = trained_model.transform
     normalized_blinded_data = transform.transform(blinded_data)
@@ -73,7 +83,7 @@ def loadModel(trained_Model, other_data=None):
 
 
 def getPosteriorProcess(model, data, transform):
-    normalized_all_data = transform.transform(data)
+    normalized_data = transform.transform(data)
     pred_dist = computePosterior(
         model,
         model.likelihood,
@@ -168,26 +178,6 @@ def optimizeHyperparams(
     return model, likelihood, loss
 
 
-def histToData(inhist, window_func, min_counts=1000, domain_mask_cut=None):
-    train_data, window_mask, *_ = regression.makeRegressionData(
-        inhist,
-        window_func,
-        domain_mask_function=domain_mask_cut,
-        exclude_less=min_counts,
-        get_mask=True,
-    )
-    test_data, domain_mask, shaped_mask = regression.makeRegressionData(
-        inhist,
-        None,
-        get_mask=True,
-        get_shaped_mask=True,
-        domain_mask_function=domain_mask_cut,
-        exclude_less=min_counts,
-    )
-    s = 1.0
-    return train_data, test_data, domain_mask
-
-
 def doCompleteRegression(
     histogram,
     model_class,
@@ -204,6 +194,10 @@ def doCompleteRegression(
 
     window_mask = window_blinder(test_data.X)
     train_data = test_data[~window_mask]
+    print(torch.count_nonzero(domain_mask))
+    print(torch.count_nonzero(window_mask))
+    print(test_data.X.shape)
+    print(train_data.X.shape)
 
     train_transform = transformations.getNormalizationTransform(train_data)
     normalized_train_data = train_transform.transform(train_data)

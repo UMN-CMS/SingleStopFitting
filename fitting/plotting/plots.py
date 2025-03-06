@@ -13,10 +13,9 @@ from .plot_tools import (
 )
 
 
-def plotPullDists(pred, raw_test, mask=None):
+def plotPullDists(pred, raw_test, save_func, mask=None):
     pred_mean = pred.Y
     pred_variances = pred.V
-    ret = {}
     fig, ax = plt.subplots(layout="tight")
     all_pulls = (raw_test.Y - pred_mean) / torch.sqrt(raw_test.V)
     p = all_pulls[torch.abs(all_pulls) < np.inf]
@@ -29,7 +28,7 @@ def plotPullDists(pred, raw_test, mask=None):
 
     ax.set_xlabel(r"$\frac{N_{obs}-N_{pred}}{\sigma_{o}}$")
     ax.set_ylabel("Count")
-    ret["global_pulls_hist"] = (fig, ax)
+    save_func("global_pulls_hist", fig)
 
     fig, ax = plt.subplots(layout="tight")
     window_p = all_pulls[mask]
@@ -41,13 +40,135 @@ def plotPullDists(pred, raw_test, mask=None):
 
     ax.set_xlabel(r"$\frac{N_{obs}-N_{pred}}{\sigma_{o}}$")
     ax.set_ylabel("Count")
-    ret["window_pulls_hist"] = (fig, ax)
+    save_func("window_pulls_hist", fig)
 
+
+def makeDiagnosticPlots2D(pred, raw_test, raw_train, save_func, mask=None):
+    if mask is not None:
+        squares = makeSquares(raw_test.X[mask], raw_test.E)
+        points = getPolyFromSquares(squares)
+
+    def addWindow(ax):
+        if mask is not None:
+            poly = Polygon(points, edgecolor="green", linewidth=3, fill=False)
+            ax.add_patch(poly)
+
+    pred_mean = pred.Y
+    pred_variances = pred.V
+    all_x2 = (pred_mean - raw_test.Y) ** 2 / raw_test.V
+    x2 = torch.sum(all_x2)
+
+    fig, ax = plt.subplots(layout="tight")
+    plotData(ax, raw_train)  # , norm=mpl.colors.LogNorm())
+    ax.set_title("Masked Inputs (Training)")
+    addWindow(ax)
+    save_func("training_points", fig)
+
+    fig, ax = plt.subplots(layout="tight")
+    f = plotRaw(ax, raw_test.E, raw_test.X, pred_mean)  # , norm=mpl.colors.LogNorm())
+    ax.set_title("GPR Mean Prediction")
+    addWindow(ax)
+    save_func("gpr_mean", fig)
+
+    fig, ax = plt.subplots(layout="tight")
+    plotRaw(
+        ax,
+        raw_test.E,
+        raw_test.X,
+        raw_test.Y,
+    )  # norm=mpl.colors.LogNorm())
+    ax.set_title("Observed Outputs")
+    addWindow(ax)
+    save_func("observed_outputs", fig)
+
+    fig, ax = plt.subplots(layout="tight")
+    f = plotRaw(ax, raw_test.E, raw_test.X, raw_test.V)
+    ax.set_title("Observed Variances")
+    addWindow(ax)
+    save_func("observed_variances", fig)
+
+    fig, ax = plt.subplots(layout="tight")
+    f = plotRaw(ax, raw_test.E, raw_test.X, pred.V)
+    ax.set_title("Pred Variances")
+    addWindow(ax)
+    save_func("predicted_variances", fig)
+
+    fig, ax = plt.subplots(layout="tight")
+    f = plotRaw(
+        ax, raw_test.E, raw_test.X, torch.sqrt(pred.V) / raw_test.Y, cmin=0, cmax=0.1
+    )
+    ax.set_title("Relative Uncertainty (std/val)")
+    addWindow(ax)
+    save_func("relative_uncertainty", fig)
+
+    fig, ax = plt.subplots(layout="tight")
+    f = plotRaw(ax, raw_test.E, raw_test.X, torch.sqrt(raw_test.V) / raw_test.Y)
+    ax.set_title("Relative Stat Uncertainty (std/val)")
+    addWindow(ax)
+    save_func("relative_stat_uncertainty", fig)
+
+
+def makeDiagnosticPlots(pred, raw_test, raw_train, save_func, mask=None):
+    d = raw_test.dim
+    if d == 1:
+        return makeDiagnosticPlots1D(
+            pred,
+            raw_test,
+            raw_train,
+            save_func,
+            mask=mask,
+        )
+    elif d == 2:
+        return makeDiagnosticPlots2D(
+            pred,
+            raw_test,
+            raw_train,
+            save_func,
+            mask=mask,
+        )
+
+
+def makeNNPlots(model, test_data):
+    ret = {}
+    fig, ax = plt.subplots(layout="tight")
+    fe = model.covar_module.base_kernel.base_kernel.feature_extractor
+    T = fe(test_data.X).detach()
+    fig, ax = plt.subplots()
+    ax.scatter(T[:, 0], T[:, 1], c=test_data.Y, cmap="hsv")
+    ret["NN"] = (fig, ax)
     return ret
 
 
-def makeDiagnosticPlots1D(pred, raw_test, raw_train, mask=None, inducing_points=None):
-    ret = {}
+def makeCovariancePlots(model, transform, data, point, save_func):
+    mod = model.covar_module
+    p = transform.transform_x.transformData(torch.tensor(point))
+    d = transform.transform(data)
+    vals = model.covar_module(p.unsqueeze(0), d.X).evaluate().detach()[0]
+    fig, ax = plt.subplots(layout="tight")
+    f = plotRaw(ax, data.E, data.X, vals)
+    save_func(f"covariance_{tuple(point)}", fig)
+
+
+def windowPlots2D(signal_data, window, save_func):
+    fig, ax = plt.subplots()
+    plotData(ax, signal_data)
+
+    if window is not None:
+        mask = window(signal_data.X)
+        squares = makeSquares(signal_data.X[mask], signal_data.E)
+        points = getPolyFromSquares(squares)
+        poly = Polygon(points, edgecolor="green", linewidth=3, fill=False)
+        ax.add_patch(poly)
+
+        figm, axm = plt.subplots()
+        plotRaw(axm, signal_data.E, signal_data.X, mask.to(torch.float64))
+        save_func("mask",figm)
+    save_func("sig_window",fig)
+
+
+def makeDiagnosticPlots1D(
+    pred, raw_test, raw_train, save_func, mask=None, inducing_points=None
+):
     d = raw_test.dim
 
     def addWindow(ax):
@@ -65,9 +186,6 @@ def makeDiagnosticPlots1D(pred, raw_test, raw_train, mask=None, inducing_points=
                 b = raw_test.X[m].max() + 10
                 ax.axvline(b, 0, 1, ls="--", color="gray", alpha=0.5)
 
-    def addInducing(ax):
-        if inducing_points is not None:
-            ax.scatter(inducing_points, np.zeros_like(inducing_points), c="red", s=1)
 
     pred_mean = pred.Y
     pred_variances = pred.V
@@ -100,142 +218,4 @@ def makeDiagnosticPlots1D(pred, raw_test, raw_train, mask=None, inducing_points=
     addWindow(ax.bottom_axes[0])
     ax.legend()
     ret["summary_plot"] = (fig, ax)
-    return ret
-
-
-def makeDiagnosticPlots2D(pred, raw_test, raw_train, mask=None, inducing_points=None):
-    ret = {}
-    d = raw_test.dim
-    if mask is not None and d == 2:
-        squares = makeSquares(raw_test.X[mask], raw_test.E)
-        points = getPolyFromSquares(squares)
-
-    def addWindow(ax):
-        if mask is None or d != 2:
-            return
-        else:
-            poly = Polygon(points, edgecolor="green", linewidth=3, fill=False)
-            ax.add_patch(poly)
-
-    def addInducing(ax):
-        if inducing_points is not None:
-            ax.scatter(inducing_points[:, 0], inducing_points[:, 1], c="red", s=1)
-
-    pred_mean = pred.Y
-    pred_variances = pred.V
-    all_x2 = (pred_mean - raw_test.Y) ** 2 / raw_test.V
-    x2 = torch.sum(all_x2)
-
-    fig, ax = plt.subplots(layout="tight")
-    plotData(ax, raw_train)  # , norm=mpl.colors.LogNorm())
-    ax.set_title("Masked Inputs (Training)")
-    addWindow(ax)
-    ret["training_points"] = (fig, ax)
-
-    fig, ax = plt.subplots(layout="tight")
-    f = plotRaw(ax, raw_test.E, raw_test.X, pred_mean)  # , norm=mpl.colors.LogNorm())
-    ax.set_title("GPR Mean Prediction")
-    addWindow(ax)
-    ret["gpr_mean"] = (fig, ax)
-
-    fig, ax = plt.subplots(layout="tight")
-    f = plotRaw(
-        ax,
-        raw_test.E,
-        raw_test.X,
-        pred_mean,
-    )  # norm=mpl.colors.LogNorm())
-    ax.set_title("GPR Mean Prediction")
-    addInducing(ax)
-    ret["inducing_gpr_mean"] = (fig, ax)
-
-    fig, ax = plt.subplots(layout="tight")
-    plotRaw(
-        ax,
-        raw_test.E,
-        raw_test.X,
-        raw_test.Y,
-    )  # norm=mpl.colors.LogNorm())
-    ax.set_title("Observed Outputs")
-    addWindow(ax)
-    ret["observed_outputs"] = (fig, ax)
-
-    fig, ax = plt.subplots(layout="tight")
-    f = plotRaw(ax, raw_test.E, raw_test.X, raw_test.V)
-    ax.set_title("Observed Variances")
-    addWindow(ax)
-    ret["observed_variances"] = (fig, ax)
-
-    fig, ax = plt.subplots(layout="tight")
-    f = plotRaw(ax, raw_test.E, raw_test.X, pred.V)
-    ax.set_title("Pred Variances")
-    addWindow(ax)
-    ret["predicted_variances"] = (fig, ax)
-
-    fig, ax = plt.subplots(layout="tight")
-    f = plotRaw(
-        ax, raw_test.E, raw_test.X, torch.sqrt(pred.V) / raw_test.Y, cmin=0, cmax=0.1
-    )
-    ax.set_title("Relative Uncertainty (std/val)")
-    addWindow(ax)
-    ret["relative_uncertainty"] = (fig, ax)
-
-    fig, ax = plt.subplots(layout="tight")
-    f = plotRaw(ax, raw_test.E, raw_test.X, torch.sqrt(raw_test.V) / raw_test.Y)
-    ax.set_title("Relative Stat Uncertainty (std/val)")
-    addWindow(ax)
-    ret["relative_stat_uncertainty"] = (fig, ax)
-
-    ret.update(plotPullDists(pred, raw_test, mask=mask))
-    return ret
-
-
-def makeDiagnosticPlots(pred, raw_test, raw_train, mask=None, inducing_points=None):
-    d = raw_test.dim
-    if d == 1:
-        return makeDiagnosticPlots1D(
-            pred, raw_test, raw_train, mask=mask, inducing_points=inducing_points
-        )
-    elif d == 2:
-        return makeDiagnosticPlots2D(
-            pred, raw_test, raw_train, mask=mask, inducing_points=inducing_points
-        )
-
-
-def makeNNPlots(model, test_data):
-    ret = {}
-    fig, ax = plt.subplots(layout="tight")
-    fe = model.covar_module.base_kernel.base_kernel.feature_extractor
-    T = fe(test_data.X).detach()
-    fig, ax = plt.subplots()
-    ax.scatter(T[:, 0], T[:, 1], c=test_data.Y, cmap="hsv")
-    ret["NN"] = (fig, ax)
-    return ret
-
-
-def makeCovariancePlots(model, transform, data, point):
-    mod = model.covar_module
-    p = transform.transform_x.transformData(torch.tensor(point))
-    d = transform.transform(data)
-    vals = model.covar_module(p.unsqueeze(0), d.X).evaluate().detach()[0]
-    fig, ax = plt.subplots(layout="tight")
-    f = plotRaw(ax, data.E, data.X, vals)
-    return fig, ax
-
-
-def windowPlots2D(signal_data, window, frac=None):
-    fig, ax = plt.subplots()
-    ret = {}
-    plotData(ax, signal_data)
-    if window is not None:
-        mask = window(signal_data.X)
-        squares = makeSquares(signal_data.X[mask], signal_data.E)
-        points = getPolyFromSquares(squares)
-        poly = Polygon(points, edgecolor="green", linewidth=3, fill=False)
-        ax.add_patch(poly)
-
-        figm, axm = plt.subplots()
-        plotRaw(axm, signal_data.E, signal_data.X, mask.to(torch.float64))
-        ret["mask"] = (figm, axm)
-    ret["sig_window"] = (fig, ax)
     return ret

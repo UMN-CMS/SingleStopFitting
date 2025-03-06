@@ -36,10 +36,9 @@ def statModel(bkg_mvn, observed=None):
 def makePosteriorPred(
     bkg_mvn,
     test_data,
+    save_func,
     mask=None,
 ):
-    ret = {}
-
     predictive = pyroi.Predictive(
         statModel,
         num_samples=800,
@@ -83,7 +82,7 @@ def makePosteriorPred(
     )
     addWindow(ax)
     addChi2(ax)
-    ret["post_relative_uncertainty"] = (fig, ax)
+    save_func("post_relative_uncertainty", fig)
 
     fig, ax = plt.subplots(layout="tight")
     ax.set_title("Relative Uncertainty In Posterior")
@@ -94,7 +93,7 @@ def makePosteriorPred(
         summ["observed"]["std"] / bkg_mvn.mean,
     )
     addWindow(ax)
-    ret["post_posterior_relative_uncertainty"] = (fig, ax)
+    save_func("post_posterior_relative_uncertainty", fig)
 
     fig, ax = plt.subplots(layout="tight")
     f = plotRaw(
@@ -103,7 +102,7 @@ def makePosteriorPred(
     ax.set_title("Pull Latent Only")
     addWindow(ax)
     addChi2(ax)
-    ret["post_pull_latent"] = (fig, ax)
+    save_func("post_pull_latent",fig)
 
     fig, ax = plt.subplots(layout="tight")
     f = plotRaw(
@@ -112,7 +111,7 @@ def makePosteriorPred(
     ax.set_title("Pull Statistical")
     addWindow(ax)
     addChi2(ax)
-    ret["post_pull_statistical"] = (fig, ax)
+    save_func("post_pull_statistical", fig)
 
     fig, ax = plt.subplots(layout="tight")
     f = plotRaw(
@@ -120,7 +119,7 @@ def makePosteriorPred(
     )
     addWindow(ax)
     ax.set_title("Pull Posterior")
-    ret["post_pull_posterior"] = (fig, ax)
+    save_func("post_pull_posterior", fig)
 
     fig, ax = plt.subplots(layout="tight")
     f = plotRaw(
@@ -131,7 +130,7 @@ def makePosteriorPred(
         cmap="coolwarm",
     )
     ax.set_title("Pull Stat - Pull Posterior")
-    ret["post_pull_diff"] = (fig, ax)
+    save_func("post_pull_diff", fig)
 
     fig, ax = plt.subplots(layout="tight")
     p = post_pulls
@@ -145,7 +144,7 @@ def makePosteriorPred(
     ax.set_ylabel("Count")
     ax.legend()
     addChi2(ax)
-    ret["post_global_pred_pulls_hist"] = (fig, ax)
+    save_func("post_global_pred_pulls_hist", fig)
 
     fig, ax = plt.subplots(layout="tight")
     h1 = np.histogram(p.numpy(), bins=10, range=(-5, 5), density=True)
@@ -157,10 +156,9 @@ def makePosteriorPred(
     ax.set_xlabel(r"$\frac{N_{obs}-N_{pred}}{\sigma_{post}}$")
     addChi2(ax)
 
-    ret["combo_pulls_hist"] = (fig, ax)
+    save_func("combo_pulls_hist", fig)
 
     global_chi2_pred = chi2Bins(bkg_mvn.mean, test_data.Y, summ["observed"]["std"])
 
     data = {"chi2_pred": float(global_chi2_pred)}
-
-    return ret, data
+    return data
