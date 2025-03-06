@@ -1,6 +1,5 @@
 import math
 
-
 import gpytorch
 import torch
 from gpytorch.variational import CholeskyVariationalDistribution, VariationalStrategy

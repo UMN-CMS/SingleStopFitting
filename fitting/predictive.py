@@ -1,6 +1,5 @@
 import numpy as np
 
-import arviz as az
 import matplotlib.pyplot as plt
 import mplhep
 import pyro
@@ -69,7 +68,7 @@ def makePosteriorPred(
 
     def addChi2(ax):
         mplhep.cms.text(
-            f"$\chi^2 Global = {global_chi2_bins:0.2f}$\n$\chi^2 Blind = {blinded_chi2_bins:0.2f}$",
+            f"$\\chi^2 Global = {global_chi2_bins:0.2f}$\n$\\chi^2 Blind = {blinded_chi2_bins:0.2f}$",
             loc=3,
             fontsize=20,
         )

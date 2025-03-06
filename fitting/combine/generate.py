@@ -1,18 +1,14 @@
 import logging
-import sys
 import json
 from pathlib import Path
 
 import argparse
 import numpy as np
 
-import fitting.models
-import fitting.transformations as transformations
-import gpytorch
 import torch
 import uproot
-from fitting.regression import DataValues, makeRegressionData, getPrediction
-from fitting.utils import getScaledEigenvecs, modelToPredMVN, chi2Bins
+from fitting.regression import getPrediction
+from fitting.utils import getScaledEigenvecs
 
 from .datacard import Channel, DataCard, Process, Systematic
 

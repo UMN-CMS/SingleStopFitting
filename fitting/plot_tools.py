@@ -100,26 +100,19 @@ def hist2dplot(
 ):
 
 
-    import collections.abc
     import inspect
-    import matplotlib as mpl
     import matplotlib.pyplot as plt
     import numpy as np
-    from mplhep.plot import append_axes, make_square_add_cbar
+    from mplhep.plot import append_axes
     from mplhep.utils import (
-        Plottable,
         get_histogram_axes_title,
         get_plottable_protocol_bins,
         hist_object_handler,
         isLight,
-        process_histogram_parts,
         align_marker,
         to_padded2d,
     )
-    from matplotlib.offsetbox import AnchoredText
-    from matplotlib.transforms import Bbox
-    from mpl_toolkits.axes_grid1 import axes_size, make_axes_locatable
-    from collections import OrderedDict, namedtuple
+    from collections import namedtuple
 
     ColormeshArtists = namedtuple("ColormeshArtists", "pcolormesh cbar text")
 

@@ -80,7 +80,7 @@ def getScaledEigenvecs(cov_mat, top=None):
 
     return eva, eve
 
-def modelToPredMVN(model, likelihood, data, slope=None, intercept=None):
+def computePosterior(model, likelihood, data, slope=None, intercept=None):
     with torch.no_grad():
         pred_dist = model(data.X)
     with gpytorch.settings.cholesky_max_tries(30):

@@ -1,4 +1,3 @@
-import arviz as az
 import fitting.models
 import pyro
 import pyro.distributions as pyrod

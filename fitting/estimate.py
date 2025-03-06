@@ -1,31 +1,25 @@
 import argparse
-import json
 import logging
 import pickle as pkl
 import random
-import shutil
-from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
 import numpy as np
 import scipy
 from .regression import DataValues
 
-import gpytorch
 import hist
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 import mplhep
 import torch
-from gpytorch.kernels import ScaleKernel as SK
 from rich import print
 
-from . import models, regression, transformations, windowing
+from . import models, regression
 from .blinder import GaussianWindow2D, MinYCut
-from .plots import makeDiagnosticPlots, makeNNPlots
+from .plots import makeDiagnosticPlots
 from .predictive import makePosteriorPred
-from .utils import chi2Bins, dataToHist, modelToPredMVN
+from .utils import chi2Bins, dataToHist
 
 torch.set_default_dtype(torch.float64)
 torch.manual_seed(12345)
@@ -72,113 +66,32 @@ def diagnostics(save_dir, trained_model):
         train_mask,
     )
     saveDiagnosticPlots(diagnostic_plots, save_dir)
+
     p, d = makePosteriorPred(pred_dist, all_data, train_mask)
     saveDiagnosticPlots(p, save_dir)
 
 
-def doRegressionForSignal(
-    signal_name,
-    signal_hist,
-    bkg_hist,
-    save_dir,
-    subsig_path,
-    signal_injections=None,
-    mean=None,
+def regress(
+    data,
+    base_save_dir,
+    window=None,
     min_counts=0,
     use_cuda=False,
     window_spread=1.0,
-    add_metadata=None,
 ):
-    add_metadata = add_metadata or {}
-    print(f"Signal Name: {signal_name}")
-    logging.info(f"Signal is: {signal_name}")
-    inducing_ratio = 4
 
-    if signal_hist:
-        signal_regression_data = DataValues.fromHistogram(signal_hist)
-        print(window_spread)
-        try:
-            window = GaussianWindow2D.fromData(
-                signal_regression_data, spread=window_spread
-            )
-        except (scipy.optimize.OptimizeWarning, RuntimeError):
-            window = None
-
-        sd = dict(
-            signal_data=signal_regression_data,
-            signal_hist=signal_hist,
-            signal_name=signal_name,
-        )
-    else:
-        window = None
-
-    sig_dir = save_dir / (signal_name if signal_name else "NoSignal") / subsig_path
-    # if sig_dir.exists():
-    #       print(f"Already have {sig_dir}")
-    sig_dir.mkdir(exist_ok=True, parents=True)
-
-    # if signal_hist:
-    #     torch.save(sd, sig_dir / "signal_data.pth")
-    #     window_plots = windowPlots2D(signal_regression_data, window)
-    #     for name, (fig, _) in window_plots.items():
-    #         fig.savefig(sig_dir / f"{name}.pdf")
-
-    if window is None:
-        print(f"COULD NOT FIND VALID WINDOW FOR SIGNAL {signal_name}")
-        return
-
+    base_save_dir = Path(base_save_dir)
+    base_save_dir.mkdir(exist_ok=True, parents=True)
     model = models.MyNNRBFModel2D
-
-    for r in signal_injections:
-        print(f"Performing estimation for signal {signal_name}.")
-        save_dir = sig_dir / f"inject_r_{str(round(r,3)).replace('.','p')}"
-        save_dir.mkdir(exist_ok=True, parents=True)
-
-        if signal_hist is not None:
-            print(f"Injecting background with signals strength {round(r,3)}")
-            to_estimate = bkg_hist + r * signal_hist
-        else:
-            print(f"Using raw background")
-            to_estimate = bkg_hist
-
-        trained_model = regression.doCompleteRegression(
-            to_estimate,
-            model,
-            MinYCut(min_y=10),
-            window,
-            iterations=300,
-            use_cuda=use_cuda,
-        )
-        diagnostics(save_dir, trained_model)
-        trained_model.metadata.update({"signal_injected": r})
-        trained_model.metadata.update(add_metadata)
-        torch.save(trained_model, save_dir / "bkg_estimation_result.pth")
-        plt.close("all")
-
-
-def doEstimationForSignals(
-    signals,
-    bkg_hist,
-    base_dir,
-    signal_injections=None,
-    mean=None,
-):
-    base_dir = Path(base_dir)
-    for signal_name, signal_hist in signals:
-        meta = {"signal_name": signal_name}
-        doRegressionForSignal(
-            signal_name,
-            signal_hist,
-            bkg_hist,
-            base_dir,
-            mean=mean,
-            signal_injections=signal_injections,
-            # signal_injections=[0.0, 1.0],
-            # # signal_injections=[0.0],
-            add_metadata=meta,
-        )
-
-        plt.close("all")
+    trained_model = regression.doCompleteRegression(
+        data,
+        model,
+        MinYCut(min_y=min_counts),
+        window,
+        iterations=20,
+        use_cuda=use_cuda,
+    )
+    return trained_model
 
 
 def estimateSingle2D(
@@ -188,13 +101,15 @@ def estimateSingle2D(
     signal_selection,
     background_name,
     base_dir,
-    sub_sig_path,
+    window_spread=1.0,
     use_cuda=False,
+    signal_injections=None,
 ):
+    signal_injections = signal_injections or [0.0]
     base_dir = Path(base_dir)
+
     with open(signal_path, "rb") as f:
         signal312 = pkl.load(f)
-
     with open(background_path, "rb") as f:
         background = pkl.load(f)
 
@@ -209,16 +124,35 @@ def estimateSingle2D(
         hist.loc(a2_min) : hist.loc(a2_max),
     ]
 
-    doRegressionForSignal(
-        signal_name,
-        signal_hist,
-        bkg_hist,
-        base_dir,
-        sub_sig_path,
-        signal_injections=[0.0, 1.0, 4.0, 16.0],
-        use_cuda=use_cuda,
+    sig_dir = base_dir  # / signal_name
+    sig_dir.mkdir(exist_ok=True, parents=True)
+    signal_regression_data = DataValues.fromHistogram(signal_hist)
+    try:
+        window = GaussianWindow2D.fromData(signal_regression_data, spread=window_spread)
+    except (scipy.optimize.OptimizeWarning, RuntimeError):
+        window = None
+    sd = dict(
+        signal_data=signal_regression_data,
+        signal_hist=signal_hist,
+        signal_name=signal_name,
     )
-    plt.close("all")
+    torch.save(sd, sig_dir / "signal_data.pth")
+    for r in signal_injections:
+        save_dir = sig_dir / f"inject_r_{str(round(r,3)).replace('.','p')}"
+        meta = {"signal_name": signal_name}
+        save_dir.mkdir(exist_ok=True, parents=True)
+        logger.info(f"Injecting background with signals strength {round(r,3)}")
+        to_estimate = bkg_hist + r * signal_hist
+        trained_model = regress(
+            to_estimate,
+            base_dir,
+            min_counts=10,
+            window=window,
+            use_cuda=True,
+        )
+        trained_model.metadata.update({"signal_injected": r})
+        # trained_model.metadata.update(add_metadata)
+        torch.save(trained_model, save_dir / "bkg_estimation_result.pth")
 
 
 def makeSimulatedBackground(inhist, model_class, outdir, use_cuda=True, num=10):
@@ -262,7 +196,6 @@ def parse_arguments():
     parser.add_argument(
         "-s", "--signal", type=str, help="Input path for the signal", required=True
     )
-    parser.add_argument("--sub-sig-path", type=str, help="", required=True)
     parser.add_argument(
         "-n", "--name", type=str, help="Name for the signal", required=True
     )
@@ -276,14 +209,12 @@ def main():
     mpl.use("Agg")
     mplhep.style.use("CMS")
     args = parse_arguments()
-    print(args)
 
     estimateSingle2D(
         background_path=args.background,
         signal_path=args.signal,
         signal_name=args.name,
         signal_selection=args.region,
-        sub_sig_path=args.sub_sig_path,
         background_name=None,
         base_dir=args.outdir,
         use_cuda=args.cuda,

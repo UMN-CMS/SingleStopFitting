@@ -3,7 +3,6 @@ import json
 import matplotlib.pyplot as plt
 import mplhep
 import numpy as np
-from scipy.interpolate import griddata
 
 
 def main():
@@ -32,8 +31,8 @@ def main():
 
     
     ax.set_xlabel("$m_{\\tilde{t}}$")
-    ax.set_ylabel("$m_{\\tilde{\chi}}$")
-    ax.set_ylabel("$m_{\\tilde{\chi}}$")
+    ax.set_ylabel("$m_{\\tilde{\\chi}}$")
+    ax.set_ylabel("$m_{\\tilde{\\chi}}$")
 
     mplhep.cms.lumitext(text="2018", ax=ax)
     a, b, c = mplhep.cms.text(text="\nQCD Simulation", ax=ax, loc=2)
