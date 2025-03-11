@@ -64,7 +64,7 @@ def estimateSingle2D(
     use_cuda=False,
     signal_injections=None,
 ):
-    signal_injections = signal_injections or [0.0]
+    signal_injections = signal_injections or [0.0, 1.0, 4.0, 16.0]
     base_dir = Path(base_dir)
 
     with open(signal_path, "rb") as f:
