@@ -146,7 +146,9 @@ def makeCovariancePlots(model, transform, data, point, save_func):
     vals = model.covar_module(p.unsqueeze(0), d.X).evaluate().detach()[0]
     fig, ax = plt.subplots(layout="tight")
     f = plotRaw(ax, data.E, data.X, vals)
-    save_func(f"covariance_{tuple(point)}", fig)
+    ax.plot([point[0]], [point[1]], "o", color="red")
+    print(point)
+    save_func(f"covariance_{'_'.join(map(str,point))}", fig)
 
 
 def windowPlots2D(signal_data, window, save_func):
@@ -162,8 +164,8 @@ def windowPlots2D(signal_data, window, save_func):
 
         figm, axm = plt.subplots()
         plotRaw(axm, signal_data.E, signal_data.X, mask.to(torch.float64))
-        save_func("mask",figm)
-    save_func("sig_window",fig)
+        save_func("mask", figm)
+    save_func("sig_window", fig)
 
 
 def makeDiagnosticPlots1D(
@@ -185,7 +187,6 @@ def makeDiagnosticPlots1D(
             if m.any():
                 b = raw_test.X[m].max() + 10
                 ax.axvline(b, 0, 1, ls="--", color="gray", alpha=0.5)
-
 
     pred_mean = pred.Y
     pred_variances = pred.V
