@@ -122,8 +122,22 @@ def estimateSingle2D(
         plotDiagnostics(save_dir, trained_model)
 
 
-def parse_arguments():
-    parser = argparse.ArgumentParser(description="Do a background estimatation")
+def main(args):
+    mpl.use("Agg")
+    mplhep.style.use("CMS")
+
+    estimateSingle2D(
+        background_path=args.background,
+        signal_path=args.signal,
+        signal_name=args.name,
+        signal_selection=args.region,
+        background_name=None,
+        base_dir=args.outdir,
+        use_cuda=args.cuda,
+    )
+
+
+def addToParser(parser):
     parser.add_argument(
         "-o", "--outdir", type=str, help="Output directory for estimate", required=True
     )
@@ -143,24 +157,8 @@ def parse_arguments():
     parser.add_argument("-r", "--region", type=str, help="Region", required=True)
     parser.add_argument("--cuda", action="store_true", help="Use cuda", default=False)
 
-    return parser.parse_args()
+    parser.set_defaults(func=main)
+    return parser
 
 
-def main():
-    mpl.use("Agg")
-    mplhep.style.use("CMS")
-    args = parse_arguments()
 
-    estimateSingle2D(
-        background_path=args.background,
-        signal_path=args.signal,
-        signal_name=args.name,
-        signal_selection=args.region,
-        background_name=None,
-        base_dir=args.outdir,
-        use_cuda=args.cuda,
-    )
-
-
-if __name__ == "__main__":
-    main()

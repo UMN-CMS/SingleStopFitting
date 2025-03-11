@@ -44,3 +44,21 @@ def plotDiagnostics(save_dir, trained_model):
     )
 
     makePosteriorPred(pred_dist, all_data, saveFunc, train_mask)
+
+
+def main(args):
+    import torch
+    out = args.outdir or Path(args.input).parent
+    m = torch.load(args.input)
+    plotDiagnostics(out, m)
+    
+
+
+def addToParser(parser):
+    parser.add_argument(
+        "-o", "--outdir", default=None, help="Output directory for plots"
+    )
+
+    parser.add_argument("input")
+    parser.set_defaults(func=main)
+    return parser
