@@ -49,6 +49,7 @@ def regress(
         window,
         iterations=200,
         use_cuda=use_cuda,
+        learn_noise=True,
     )
     return trained_model
 
@@ -68,7 +69,7 @@ def estimateSingle2D(
     base_dir = Path(base_dir)
 
     with open(signal_path, "rb") as f:
-        signal312 = pkl.load(f)
+        signal = pkl.load(f)
     with open(background_path, "rb") as f:
         background = pkl.load(f)
 
@@ -78,7 +79,7 @@ def estimateSingle2D(
     a1_min, a1_max = a1.edges.min(), a1.edges.max()
     a2_min, a2_max = a2.edges.min(), a2.edges.max()
 
-    signal_hist = signal312[signal_name, signal_selection]["hist"][
+    signal_hist = signal[signal_name, signal_selection]["hist"][
         hist.loc(a1_min) : hist.loc(a1_max),
         hist.loc(a2_min) : hist.loc(a2_max),
     ]
@@ -112,7 +113,7 @@ def estimateSingle2D(
         trained_model = regress(
             to_estimate,
             base_dir,
-            min_counts=10,
+            min_counts=-1,
             window=window,
             use_cuda=True,
         )

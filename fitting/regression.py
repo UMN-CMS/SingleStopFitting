@@ -32,6 +32,8 @@ class TrainedModel:
     transform: torch.Tensor
     metadata: dict
 
+    learned_noise: bool = False
+
 
 def getModelingData(trained_model, other_data=None):
     hist = trained_model.input_data
@@ -57,7 +59,7 @@ def loadModel(trained_model, other_data=None):
     model_class = trained_model.model_class
     model_state = trained_model.model_state
 
-    all_data, bm = getModelingData(trained_model,other_data)
+    all_data, bm = getModelingData(trained_model, other_data)
     blinded_data = all_data.getMasked(~bm)
 
     print(all_data.X.shape)
@@ -70,7 +72,7 @@ def loadModel(trained_model, other_data=None):
 
     likelihood = gpytorch.likelihoods.FixedNoiseGaussianLikelihood(
         noise=normalized_blinded_data.V,
-        learn_additional_noise=False,
+        learn_additional_noise=trained_model.learned_noise,
         noise_constraint=gpytorch.constraints.GreaterThan(1e-10),
     )
     model = model_class(
@@ -186,18 +188,23 @@ def doCompleteRegression(
     use_cuda=True,
     iterations=300,
     lr=0.001,
+    learn_noise=False,
 ):
 
     all_data = DataValues.fromHistogram(histogram)
     domain_mask = domain_blinder(all_data.X, all_data.Y)
     test_data = all_data[domain_mask]
 
-    window_mask = window_blinder(test_data.X)
+    if window_blinder is not None:
+        window_mask = window_blinder(test_data.X)
+    else:
+        window_mask = ~torch.ones_like(test_data.Y, dtype=bool)
+
     train_data = test_data[~window_mask]
-    print(torch.count_nonzero(domain_mask))
-    print(torch.count_nonzero(window_mask))
-    print(test_data.X.shape)
-    print(train_data.X.shape)
+    # print(torch.count_nonzero(domain_mask))
+    # print(torch.count_nonzero(window_mask))
+    # print(test_data.X.shape)
+    # print(train_data.X.shape)
 
     train_transform = transformations.getNormalizationTransform(train_data)
     normalized_train_data = train_transform.transform(train_data)
@@ -213,7 +220,7 @@ def doCompleteRegression(
 
     likelihood = gpytorch.likelihoods.FixedNoiseGaussianLikelihood(
         noise=train.V,
-        learn_additional_noise=False,
+        learn_additional_noise=learn_noise,
         noise_constraint=gpytorch.constraints.GreaterThan(1e-10),
     )
     model = model_class(train.X, train.Y, likelihood)
@@ -245,5 +252,6 @@ def doCompleteRegression(
         blind_mask=window_mask,
         transform=train_transform,
         metadata={},
+        learned_noise=learn_noise,
     )
     return trained_model
