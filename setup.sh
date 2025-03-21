@@ -182,7 +182,6 @@ function startup_with_container(){
             apptainer_flags="$apptainer_flags --bind $HOME/.globus" # --bind $HOME/.rnd"
         fi
 
-	echo "HERE"
 
         apptainer exec \
                   --env "APPTAINER_WORKING_DIR=$PWD" \
@@ -203,7 +202,6 @@ function start_jupyter(){
 
 function main(){
     local mode="${1:-apptainer}"
-    echo $mode
     case "$mode" in
         apptainer )
             startup_with_container 
