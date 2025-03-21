@@ -37,6 +37,9 @@ def dataToHist(X,Y,E,V=None):
 def chi2Bins(obs, exp, var, mask=None):
     if mask is not None:
         obs, exp, var = obs[mask], exp[mask], var[mask]
+    m = var>5
+    obs,exp,var = obs[m], exp[m],var[m]
+    
     return torch.sum((obs - exp).pow(2) / var) / obs.size(0)
 
 

@@ -43,13 +43,13 @@ def plotPullDists(pred, raw_test, save_func, mask=None):
     save_func("window_pulls_hist", fig)
 
 
-def makeDiagnosticPlots2D(pred, raw_test, raw_train, save_func, mask=None):
-    if mask is not None:
+def makeDiagnosticPlots2D(pred, raw_test, raw_train, save_func, mask=None, **kwargs):
+    if mask is not None and torch.any(mask):
         squares = makeSquares(raw_test.X[mask], raw_test.E)
         points = getPolyFromSquares(squares)
 
     def addWindow(ax):
-        if mask is not None:
+        if mask is not None and torch.any(mask):
             poly = Polygon(points, edgecolor="green", linewidth=3, fill=False)
             ax.add_patch(poly)
 
@@ -59,13 +59,15 @@ def makeDiagnosticPlots2D(pred, raw_test, raw_train, save_func, mask=None):
     x2 = torch.sum(all_x2)
 
     fig, ax = plt.subplots(layout="tight")
-    plotData(ax, raw_train)  # , norm=mpl.colors.LogNorm())
+    plotData(ax, raw_train, **kwargs)  # , norm=mpl.colors.LogNorm())
     ax.set_title("Masked Inputs (Training)")
     addWindow(ax)
     save_func("training_points", fig)
 
     fig, ax = plt.subplots(layout="tight")
-    f = plotRaw(ax, raw_test.E, raw_test.X, pred_mean)  # , norm=mpl.colors.LogNorm())
+    f = plotRaw(
+        ax, raw_test.E, raw_test.X, pred_mean, **kwargs
+    )  # , norm=mpl.colors.LogNorm())
     ax.set_title("GPR Mean Prediction")
     addWindow(ax)
     save_func("gpr_mean", fig)
@@ -76,13 +78,14 @@ def makeDiagnosticPlots2D(pred, raw_test, raw_train, save_func, mask=None):
         raw_test.E,
         raw_test.X,
         raw_test.Y,
-    )  # norm=mpl.colors.LogNorm())
+        **kwargs,
+    )
     ax.set_title("Observed Outputs")
     addWindow(ax)
     save_func("observed_outputs", fig)
 
     fig, ax = plt.subplots(layout="tight")
-    f = plotRaw(ax, raw_test.E, raw_test.X, raw_test.V)
+    f = plotRaw(ax, raw_test.E, raw_test.X, raw_test.V, **kwargs)
     ax.set_title("Observed Variances")
     addWindow(ax)
     save_func("observed_variances", fig)
@@ -102,29 +105,23 @@ def makeDiagnosticPlots2D(pred, raw_test, raw_train, save_func, mask=None):
     save_func("relative_uncertainty", fig)
 
     fig, ax = plt.subplots(layout="tight")
-    f = plotRaw(ax, raw_test.E, raw_test.X, torch.sqrt(raw_test.V) / raw_test.Y)
+    f = plotRaw(
+        ax, raw_test.E, raw_test.X, torch.sqrt(raw_test.V) / raw_test.Y, **kwargs
+    )
     ax.set_title("Relative Stat Uncertainty (std/val)")
     addWindow(ax)
     save_func("relative_stat_uncertainty", fig)
 
 
-def makeDiagnosticPlots(pred, raw_test, raw_train, save_func, mask=None):
+def makeDiagnosticPlots(pred, raw_test, raw_train, save_func, mask=None, **kwargs):
     d = raw_test.dim
     if d == 1:
         return makeDiagnosticPlots1D(
-            pred,
-            raw_test,
-            raw_train,
-            save_func,
-            mask=mask,
+            pred, raw_test, raw_train, save_func, mask=mask, **kwargs
         )
     elif d == 2:
         return makeDiagnosticPlots2D(
-            pred,
-            raw_test,
-            raw_train,
-            save_func,
-            mask=mask,
+            pred, raw_test, raw_train, save_func, mask=mask, **kwargs
         )
 
 

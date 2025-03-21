@@ -5,6 +5,7 @@ import gpytorch
 import hist
 import torch
 from rich import print
+import logging
 
 from .utils import dataToHist
 from dataclasses import dataclass
@@ -17,6 +18,8 @@ import torch
 
 from . import transformations
 from .utils import dataToHist, computePosterior
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -45,12 +48,9 @@ def getModelingData(trained_model, other_data=None):
         all_data = other_data
 
     if trained_model.blind_mask is not None:
-        print("HERE")
         bm = trained_model.blind_mask
-        print(torch.count_nonzero(bm))
     else:
         bm = torch.zeros_like(all_data.Y, dtype=bool)
-        print(torch.count_nonzero(bm))
 
     return all_data, bm
 
@@ -61,10 +61,6 @@ def loadModel(trained_model, other_data=None):
 
     all_data, bm = getModelingData(trained_model, other_data)
     blinded_data = all_data.getMasked(~bm)
-
-    print(all_data.X.shape)
-    print(blinded_data.X.shape)
-    print(torch.count_nonzero(~bm))
 
     transform = trained_model.transform
     normalized_blinded_data = transform.transform(blinded_data)
@@ -159,6 +155,7 @@ def optimizeHyperparams(
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
 
     mll = gpytorch.mlls.ExactMarginalLogLikelihood(likelihood, model)
+    # mll = gpytorch.mlls.VariationalELBO(likelihood, model, train_data.Y.numel())
 
     scheduler = torch.optim.lr_scheduler.StepLR(
         optimizer, step_size=iterations // 1, gamma=0.1
@@ -175,7 +172,7 @@ def optimizeHyperparams(
         slr = scheduler.get_last_lr()[0]
 
         if (i % (iterations // 20) == 0) or i == iterations - 1:
-            print(f"Iter {i} (lr={slr:0.4f}): Loss={round(loss.item(),4)}")
+            logger.info(f"Iter {i} (lr={slr:0.4f}): Loss={round(loss.item(),4)}")
 
     return model, likelihood, loss
 
@@ -192,7 +189,15 @@ def doCompleteRegression(
 ):
 
     all_data = DataValues.fromHistogram(histogram)
+    ##################################
+    ##################################
+    ##################################
+    # all_data.V = torch.clamp(all_data.V, min=10)
+    ##################################
+    ##################################
+    ##################################
     domain_mask = domain_blinder(all_data.X, all_data.Y)
+
     test_data = all_data[domain_mask]
 
     if window_blinder is not None:
@@ -211,7 +216,7 @@ def doCompleteRegression(
     normalized_test_data = train_transform.transform(test_data)
 
     if torch.cuda.is_available() and use_cuda:
-        print("USING CUDA")
+        logger.info("USING CUDA")
         train = normalized_train_data.toGpu()
         norm_test = normalized_test_data.toGpu()
     else:

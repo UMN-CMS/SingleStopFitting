@@ -37,6 +37,7 @@ def regress(
     min_counts=0,
     use_cuda=False,
     window_spread=1.0,
+    learning_rate=0.02,
 ):
 
     base_save_dir = Path(base_save_dir)
@@ -49,7 +50,8 @@ def regress(
         window,
         iterations=200,
         use_cuda=use_cuda,
-        learn_noise=True,
+        learn_noise=False,
+        lr=learning_rate,
     )
     return trained_model
 
@@ -62,40 +64,60 @@ def estimateSingle2D(
     background_name,
     base_dir,
     window_spread=1.0,
+    blinding_signal=True,
     use_cuda=False,
     signal_injections=None,
+    learning_rate=0.02,
+    rebin=1,
+    min_base_variance=None,
 ):
     signal_injections = signal_injections or [0.0, 1.0, 4.0, 16.0]
     base_dir = Path(base_dir)
 
     with open(signal_path, "rb") as f:
-        signal = pkl.load(f)
+        signal_file = pkl.load(f)
     with open(background_path, "rb") as f:
         background = pkl.load(f)
-
     bkg_hist = background
-    bkg_hist = bkg_hist
+    if min_base_variance:
+        import numpy as np
+        bkg_hist = bkg_hist.copy(deep=True)
+        v = bkg_hist.view(flow=False).variance
+        bkg_hist.view(flow=False).variance = np.clip(v, a_min=5, a_max=None)
+
+
     a1, a2 = bkg_hist.axes
     a1_min, a1_max = a1.edges.min(), a1.edges.max()
     a2_min, a2_max = a2.edges.min(), a2.edges.max()
 
-    signal_hist = signal[signal_name, signal_selection]["hist"][
+    signal_hist = signal_file[signal_name, signal_selection]["hist"][
         hist.loc(a1_min) : hist.loc(a1_max),
         hist.loc(a2_min) : hist.loc(a2_max),
     ]
+    signal_hist = signal_hist[hist.rebin(rebin), hist.rebin(rebin)]
 
     sig_dir = base_dir  # / signal_name
     sig_dir.mkdir(exist_ok=True, parents=True)
     signal_regression_data = DataValues.fromHistogram(signal_hist)
-    try:
-        window = GaussianWindow2D.fromData(signal_regression_data, spread=window_spread)
-    except (scipy.optimize.OptimizeWarning, RuntimeError):
+    if blinding_signal:
+        try:
+            window = GaussianWindow2D.fromData(
+                signal_regression_data, spread=window_spread
+            )
+        except (scipy.optimize.OptimizeWarning, RuntimeError) as e:
+            raise e
+            window = None
+    else:
+        logger.warn(f"Could not find a window for signal {signal_name}")
         window = None
     sd = dict(
         signal_data=signal_regression_data,
         signal_hist=signal_hist,
         signal_name=signal_name,
     )
+
+    print(bkg_hist)
+    print(signal_hist)
 
     def saveFunc(name, fig):
         ext = "png"
@@ -105,6 +127,7 @@ def estimateSingle2D(
     windowPlots2D(signal_regression_data, window, saveFunc)
     torch.save(sd, sig_dir / "signal_data.pth")
     for r in signal_injections:
+        print(window)
         save_dir = sig_dir / f"inject_r_{str(round(r,3)).replace('.','p')}"
         meta = {"signal_name": signal_name}
         save_dir.mkdir(exist_ok=True, parents=True)
@@ -116,6 +139,7 @@ def estimateSingle2D(
             min_counts=-1,
             window=window,
             use_cuda=True,
+            learning_rate=learning_rate,
         )
         trained_model.metadata.update({"signal_injected": r})
         # trained_model.metadata.update(add_metadata)
@@ -126,6 +150,8 @@ def estimateSingle2D(
 def main(args):
     mpl.use("Agg")
     mplhep.style.use("CMS")
+    if not args.blind_signal:
+        logger.warn(f"Not blinding signal window")
 
     estimateSingle2D(
         background_path=args.background,
@@ -135,6 +161,12 @@ def main(args):
         background_name=None,
         base_dir=args.outdir,
         use_cuda=args.cuda,
+        window_spread=1.5,
+        learning_rate=args.learning_rate,
+        rebin=args.rebin,
+        blinding_signal=args.blind_signal,
+        signal_injections=[0.0, 1.0, 4.0, 16.0],
+        min_base_variance=5
     )
 
 
@@ -155,11 +187,13 @@ def addToParser(parser):
     parser.add_argument(
         "-n", "--name", type=str, help="Name for the signal", required=True
     )
+    parser.add_argument("--rebin", default=1, type=int, help="Rebinning")
     parser.add_argument("-r", "--region", type=str, help="Region", required=True)
+    parser.add_argument("-l", "--learning-rate", type=float, default=0.02)
     parser.add_argument("--cuda", action="store_true", help="Use cuda", default=False)
+    parser.add_argument(
+        "--blind-signal", default=True, action=argparse.BooleanOptionalAction
+    )
 
     parser.set_defaults(func=main)
     return parser
-
-
-

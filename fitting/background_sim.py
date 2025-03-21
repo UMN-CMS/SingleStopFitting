@@ -1,4 +1,9 @@
 import pickle as pkl
+from .regression import DataValues
+import mplhep
+from .utils import chi2Bins
+from .predictive import makePosteriorPred
+import numpy as np
 from pathlib import Path
 import torch
 import matplotlib.pyplot as plt
@@ -10,29 +15,61 @@ from .utils import dataToHist
 import hist
 
 
-def makeSimulatedBackground(inhist, outdir, use_cuda=True, rebin=1):
-    inhist = inhist[hist.rebin(rebin), hist.rebin(rebin)]
+def makeSimulatedBackground(inhist, outdir, use_cuda=True):
+    mplhep.style.use("CMS")
+    outdir = Path(outdir)
+    outdir.mkdir(exist_ok=True, parents=True)
+
+    inhist = inhist.copy(deep=True)
+    v = inhist.view(flow=False).variance
+    inhist.view(flow=False).variance = np.clip(v, a_min=20, a_max=None)
+
     trained_model = regression.doCompleteRegression(
         inhist,
         models.MyNNRBFModel2D,
-        MinYCut(min_y=3),
+        MinYCut(min_y=-1),
         None,
         use_cuda=use_cuda,
         iterations=200,
         learn_noise=False,
+        lr=0.01,
     )
 
     model = regression.loadModel(trained_model)
-    data, bm = regression.getModelingData(trained_model)
-    all_data = regression.DataValues.fromHistogram(inhist)
+    all_data, bm = regression.getModelingData(trained_model)
+    complete_data = regression.DataValues.fromHistogram(inhist)
 
     init_sum = all_data.Y.sum()
     print(f"Initial total is {init_sum}")
-    pred_dist = regression.getPosteriorProcess(model, all_data, trained_model.transform)
+    pred_dist = regression.getPosteriorProcess(
+        model, complete_data, trained_model.transform
+    )
+    pred_data = DataValues(
+        complete_data.X, pred_dist.mean, pred_dist.variance, complete_data.E
+    )
+
+    mask = all_data.V > 0
+    global_chi2_bins = chi2Bins(pred_data.Y, complete_data.Y, complete_data.V)
+    # blinded_chi2_bins = chi2Bins(all_data.Y, pred_data.Y, all_data.V, bm)
+    print(f"Global Chi2/bins = {global_chi2_bins}")
+    # print(f"Blinded Chi2/bins = {blinded_chi2_bins}")
+    # data = {
+    #     "global_chi2/bins": float(global_chi2_bins),
+    #     "blinded_chi2/bins": float(global_chi2_bins),
+    # }
+
+    def saveFunc(name, fig):
+        ext = "png"
+        name = name.replace("(", "").replace(")", "").replace(".", "p")
+        print(name)
+        fig.savefig((outdir / name).with_suffix(f".{ext}"))
+        plt.close(fig)
+    print(f"Expcted total is {pred_dist.mean.sum()}")
+
+    diagnostic_plots = makeDiagnosticPlots(pred_data, complete_data, complete_data, saveFunc)
+    makePosteriorPred(pred_dist, complete_data, saveFunc)
 
     poiss = torch.distributions.Poisson(torch.clamp(pred_dist.mean, min=0))
-    outdir = Path(outdir)
-    outdir.mkdir(exist_ok=True, parents=True)
     torch.save(trained_model, outdir / "simulated_trained_model.pth")
 
     fig, ax = plt.subplots()
@@ -40,7 +77,7 @@ def makeSimulatedBackground(inhist, outdir, use_cuda=True, rebin=1):
     fig.savefig(outdir / f"orig.png")
     plt.close(fig)
 
-    for i in range(4):
+    for i in range(2):
         o = outdir / f"background_{i}"
         o.mkdir(exist_ok=True, parents=True)
 
@@ -51,16 +88,13 @@ def makeSimulatedBackground(inhist, outdir, use_cuda=True, rebin=1):
             plt.close(fig)
 
         sampled = poiss.sample()
-        vals = dataToHist(all_data.X, sampled, all_data.E, sampled)
+        vals = dataToHist(complete_data.X, sampled, complete_data.E, sampled)
         new_hist = inhist.copy(deep=True)
         new_hist.view(flow=True).value = 0
         new_hist.view(flow=True).variance = 0
         new_hist.view(flow=False).value = vals.values()
         new_hist.view(flow=False).variance = vals.variances()
-        print(f"Final total {i} is {new_hist.sum()}")
-        # ratio = new_hist.sum().value / init_sum
-        print(f"Ratio {ratio}")
-        new_hist = (1 / ratio) * new_hist
+        ratio = new_hist.sum().value / init_sum
         with open(o / f"background_{i}.pkl", "wb") as f:
             pkl.dump(new_hist, f)
         fig, ax = plt.subplots()
@@ -69,14 +103,11 @@ def makeSimulatedBackground(inhist, outdir, use_cuda=True, rebin=1):
         plt.close(fig)
 
         pred_data = regression.DataValues(
-            all_data.X, sampled, 100000 * torch.ones_like(sampled), all_data.E
+            complete_data.X, sampled, 100000 * torch.ones_like(sampled), all_data.E
         )
 
         diagnostic_plots = makeDiagnosticPlots(
-            pred_data,
-            all_data,
-            data,
-            saveFunc,
+            pred_data, complete_data, complete_data, saveFunc
         )
 
 
@@ -100,16 +131,18 @@ def loadHistogram(path, name, selection, x_bounds=None, y_bounds=None):
 
 
 def handleSim(args):
-    hist = loadHistogram(
+    h = loadHistogram(
         args.input, args.name, args.selection, args.x_bounds, args.y_bounds
     )
+    if args.rebin:
+        h = h[hist.rebin(args.rebin), hist.rebin(args.rebin)]
     if args.only_clip:
         outdir = Path(args.outdir)
         outdir.mkdir(exist_ok=True, parents=True)
         with open(outdir / f"background.pkl", "wb") as f:
             pkl.dump(hist, f)
     else:
-        makeSimulatedBackground(hist, args.outdir, use_cuda=args.use_cuda)
+        makeSimulatedBackground(h, args.outdir, use_cuda=args.use_cuda)
 
 
 def addSimParser(parser):
@@ -136,6 +169,7 @@ def addSimParser(parser):
     parser.add_argument("-n", "--name", required=True, type=str, help="Name")
     parser.add_argument("-i", "--input", required=True, type=str, help="Input")
     parser.add_argument("-u", "--use-cuda", action="store_true", default=True, help="")
+    parser.add_argument("-r", "--rebin", default=None, type=int, help="Rebinning")
     parser.add_argument(
         "-c", "--only-clip", action="store_true", default=False, help="Only clip"
     )

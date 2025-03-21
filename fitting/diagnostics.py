@@ -1,5 +1,6 @@
 from pathlib import Path
 from fitting.utils import getScaledEigenvecs
+import gpytorch
 
 from .regression import DataValues
 
@@ -12,7 +13,7 @@ from .predictive import makePosteriorPred
 from .utils import chi2Bins
 
 
-def plotDiagnostics(save_dir, trained_model):
+def plotDiagnostics(save_dir, trained_model, **kwargs):
     model = regression.loadModel(trained_model)
     all_data, train_mask = regression.getModelingData(trained_model)
     pred_dist = regression.getPosteriorProcess(model, all_data, trained_model.transform)
@@ -22,6 +23,12 @@ def plotDiagnostics(save_dir, trained_model):
     mask = all_data.V > 0
     global_chi2_bins = chi2Bins(pred_data.Y, all_data.Y, all_data.V, mask)
     blinded_chi2_bins = chi2Bins(all_data.Y, pred_data.Y, all_data.V, train_mask & mask)
+
+    # final_nlpd = gpytorch.metrics.negative_log_predictive_density(pred_dist, test_y)
+
+    # l = model.likelihood
+    # post = l(pred_dist)
+
     print(f"Global Chi2/bins = {global_chi2_bins}")
     print(f"Blinded Chi2/bins = {blinded_chi2_bins}")
     data = {
@@ -45,6 +52,7 @@ def plotDiagnostics(save_dir, trained_model):
         all_data.getMasked(~train_mask),
         saveFunc,
         mask=train_mask,
+        **kwargs,
     )
 
     makePosteriorPred(pred_dist, all_data, saveFunc, train_mask)
@@ -106,7 +114,7 @@ def plotEigenvars(save_dir, trained_model, sig_percent=0.05):
             plt.close(fig)
 
         fig, ax = plt.subplots()
-        plotRaw(ax, all_data.E, all_data.X, va*ve)
+        plotRaw(ax, all_data.E, all_data.X, va * ve)
         saveFunc(f"eigenvar_{i}__{round(float(va),1)}".replace(".", "p"), fig)
 
 
@@ -122,11 +130,14 @@ def main(args):
     m = torch.load(args.input)
     plotDiagnostics(out, m)
 
+
 def runEigens(args):
     import torch
+
     out = args.outdir or Path(args.input).parent
     m = torch.load(args.input)
     plotEigenvars(out, m, args.min_frac)
+
 
 def runCovars(args):
     import torch

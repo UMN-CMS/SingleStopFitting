@@ -94,19 +94,7 @@ def createDatacard(obs, pred, signal_data, output_dir, signal_meta=None):
     with open(output_dir / "metadata.json", 'w') as f:
         f.write(json.dumps(metadata))
 
-
-def parseArguments():
-    parser = argparse.ArgumentParser(description='')
-    parser.add_argument('--output')
-    parser.add_argument('--base')
-    parser.add_argument('inputs',nargs="+" )
-    return parser.parse_args()
-    
-
-def main():
-
-    args = parseArguments()
-
+def main(args):
     for data_path in args.inputs:
         p = Path(data_path)
         parent = p.parent
@@ -132,6 +120,17 @@ def main():
         (args.output / relative).mkdir(exist_ok=True, parents=True)
         createDatacard(obs, pred, sig_data["signal_data"], args.output / relative, signal_meta=signal_metadata) 
 
+
+
+def addDatacardGenerateParser(parser):
+    parser.add_argument('--output')
+    parser.add_argument('--base')
+    parser.add_argument('inputs',nargs="+" )
+    parser.set_defaults(func=main)
+
+
+
+    
 
 if __name__ == "__main__":
     main()

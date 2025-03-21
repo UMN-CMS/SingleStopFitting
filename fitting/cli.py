@@ -2,6 +2,7 @@ import argparse
 import fitting.estimate
 import fitting.diagnostics
 import fitting.background_sim
+from fitting.combine.generate import addDatacardGenerateParser
 
 
 def parseAndProcess():
@@ -12,6 +13,7 @@ def parseAndProcess():
     fitting.diagnostics.addCovarsToParser(subparsers.add_parser("covars"))
     fitting.diagnostics.addEigensToParser(subparsers.add_parser("eigens"))
     fitting.background_sim.addSimParser(subparsers.add_parser("bkg-smooth"))
+    addDatacardGenerateParser(subparsers.add_parser("make-datacard"))
 
     args = parser.parse_args()
     args.func(args)

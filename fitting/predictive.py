@@ -33,18 +33,23 @@ def statModel(bkg_mvn, observed=None):
         )
 
 
+def getPosteriorPred(bkg_mvn, num_samples=800):
+    predictive = pyroi.Predictive(
+        statModel,
+        num_samples=num_samples,
+    )
+
+    pred = predictive(bkg_mvn)
+    return pred
+
+
 def makePosteriorPred(
     bkg_mvn,
     test_data,
     save_func,
     mask=None,
 ):
-    predictive = pyroi.Predictive(
-        statModel,
-        num_samples=800,
-    )
-
-    pred = predictive(bkg_mvn)
+    pred = getPosteriorPred(bkg_mvn)
     summ = summary(pred)
 
     stat_pulls = (test_data.Y - bkg_mvn.mean) / torch.sqrt(test_data.V)
@@ -57,7 +62,7 @@ def makePosteriorPred(
     d = test_data.dim
 
     def addWindow(ax):
-        if mask is None or d != 2:
+        if mask is None or not torch.any(mask):
             return
         else:
             squares = makeSquares(test_data.X[mask], test_data.E)
@@ -102,7 +107,7 @@ def makePosteriorPred(
     ax.set_title("Pull Latent Only")
     addWindow(ax)
     addChi2(ax)
-    save_func("post_pull_latent",fig)
+    save_func("post_pull_latent", fig)
 
     fig, ax = plt.subplots(layout="tight")
     f = plotRaw(
@@ -148,9 +153,10 @@ def makePosteriorPred(
 
     fig, ax = plt.subplots(layout="tight")
     h1 = np.histogram(p.numpy(), bins=10, range=(-5, 5), density=True)
-    h2 = np.histogram(p[mask].numpy(), bins=10, range=(-5, 5), density=True)
     mplhep.histplot(h1, ax=ax, label="Global Pulls")
-    mplhep.histplot(h2, ax=ax, label="Blinded Pulls")
+    if mask is not None:
+        h2 = np.histogram(p[mask].numpy(), bins=10, range=(-5, 5), density=True)
+        mplhep.histplot(h2, ax=ax, label="Blinded Pulls")
     ax.plot(X, Y, label="Unit Normal")
     ax.legend()
     ax.set_xlabel(r"$\frac{N_{obs}-N_{pred}}{\sigma_{post}}$")
