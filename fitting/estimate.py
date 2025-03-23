@@ -68,8 +68,10 @@ def estimateSingle2D(
     use_cuda=False,
     signal_injections=None,
     learning_rate=0.02,
-    rebin=1,
+    rebin_signal=1,
+    rebin_background=1,
     min_base_variance=None,
+    use_other_model=None,
 ):
     signal_injections = signal_injections or [0.0, 1.0, 4.0, 16.0]
     base_dir = Path(base_dir)
@@ -81,10 +83,10 @@ def estimateSingle2D(
     bkg_hist = background
     if min_base_variance:
         import numpy as np
+
         bkg_hist = bkg_hist.copy(deep=True)
         v = bkg_hist.view(flow=False).variance
         bkg_hist.view(flow=False).variance = np.clip(v, a_min=5, a_max=None)
-
 
     a1, a2 = bkg_hist.axes
     a1_min, a1_max = a1.edges.min(), a1.edges.max()
@@ -94,7 +96,8 @@ def estimateSingle2D(
         hist.loc(a1_min) : hist.loc(a1_max),
         hist.loc(a2_min) : hist.loc(a2_max),
     ]
-    signal_hist = signal_hist[hist.rebin(rebin), hist.rebin(rebin)]
+    signal_hist = signal_hist[hist.rebin(rebin_signal), hist.rebin(rebin_signal)]
+    bkg_hist = bkg_hist[hist.rebin(rebin_background), hist.rebin(rebin_background)]
 
     sig_dir = base_dir  # / signal_name
     sig_dir.mkdir(exist_ok=True, parents=True)
@@ -133,14 +136,23 @@ def estimateSingle2D(
         save_dir.mkdir(exist_ok=True, parents=True)
         logger.info(f"Injecting background with signals strength {round(r,3)}")
         to_estimate = bkg_hist + r * signal_hist
-        trained_model = regress(
-            to_estimate,
-            base_dir,
-            min_counts=-1,
-            window=window,
-            use_cuda=True,
-            learning_rate=learning_rate,
-        )
+        if use_other_model:
+            trained_model = regression.updateModelNewData(
+                use_other_model,
+                to_estimate,
+                MinYCut(min_y=0),
+                window,
+            )
+
+        else:
+            trained_model = regress(
+                to_estimate,
+                base_dir,
+                min_counts=10,
+                window=window,
+                use_cuda=True,
+                learning_rate=learning_rate,
+            )
         trained_model.metadata.update({"signal_injected": r})
         # trained_model.metadata.update(add_metadata)
         torch.save(trained_model, save_dir / "bkg_estimation_result.pth")
@@ -153,6 +165,11 @@ def main(args):
     if not args.blind_signal:
         logger.warn(f"Not blinding signal window")
 
+    other_model = None
+    if args.use_other_model:
+        other_model_data = torch.load(args.use_other_model)
+        other_model = regression.loadModel(other_model_data)
+
     estimateSingle2D(
         background_path=args.background,
         signal_path=args.signal,
@@ -161,12 +178,14 @@ def main(args):
         background_name=None,
         base_dir=args.outdir,
         use_cuda=args.cuda,
-        window_spread=1.5,
+        window_spread=1.0,
         learning_rate=args.learning_rate,
-        rebin=args.rebin,
+        rebin_signal=args.rebin_signal,
+        rebin_background=args.rebin_background,
         blinding_signal=args.blind_signal,
         signal_injections=[0.0, 1.0, 4.0, 16.0],
-        min_base_variance=5
+        min_base_variance=5,
+        use_other_model=other_model,
     )
 
 
@@ -187,10 +206,12 @@ def addToParser(parser):
     parser.add_argument(
         "-n", "--name", type=str, help="Name for the signal", required=True
     )
-    parser.add_argument("--rebin", default=1, type=int, help="Rebinning")
+    parser.add_argument("--rebin-signal", default=1, type=int, help="Rebinning")
+    parser.add_argument("--rebin-background", default=1, type=int, help="Rebinning")
     parser.add_argument("-r", "--region", type=str, help="Region", required=True)
     parser.add_argument("-l", "--learning-rate", type=float, default=0.02)
     parser.add_argument("--cuda", action="store_true", help="Use cuda", default=False)
+    parser.add_argument("--use-other-model", type=str)
     parser.add_argument(
         "--blind-signal", default=True, action=argparse.BooleanOptionalAction
     )

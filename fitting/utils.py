@@ -56,7 +56,7 @@ def affineTransformMVN(mvn, slope, intercept):
     cm = mvn.covariance_matrix
     mu = mvn.mean
     new_mu = slope * mu + intercept
-    d = slope * torch.eye(cm.shape[0])
+    d = slope * torch.eye(cm.shape[0],device=slope.device)
     new_cm = d @ cm @ d.T
     ret = type(mvn)(new_mu, new_cm)
     return ret

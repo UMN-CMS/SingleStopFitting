@@ -4,23 +4,22 @@ import hist
 import pyro
 import pyro.distributions as dist
 import torch
-from analyzer.core import AnalysisResult
-from analyzer.datasets import SampleManager
-from fitting.regression import DataValues, makeRegressionData
-from fitting.utils import getScaledEigenvecs
 from pyro.infer import MCMC, NUTS
+from fitting.regression import loadModel, getModelingData, getPosteriorProcess
+
+torch.set_default_dtype(torch.float64)
 
 
-def statModel(bkg_mean, bkg_transform, signal_dist, observed=None):
-    r = pyro.sample("rate", dist.Uniform(-20, 20))
-    with pyro.plate("background_variations", bkg_transform.shape[1]):
-        b = pyro.sample("raw_variations", dist.Normal(0, 1))
-    background = bkg_mean + bkg_transform @ b
+def statModel(bkg_pdf, signal_dist, observed=None):
+    # r = pyro.sample("rate", dist.Uniform(-20, 20))
+    r = pyro.param("rate", lambda: 1+torch.randn(()).to(signal_dist.device))
+    r = r.to(signal_dist.device)
+    print(r)
+    background = torch.clamp(pyro.sample("bkg_estimate", bkg_pdf), 1)
     obs_hist = (r * signal_dist) + background
-    with pyro.plate("bins", bkg_mean.shape[0]):
-        return pyro.sample(
-            "observed", dist.Poisson(torch.clamp(obs_hist, 1)), obs=observed
-        )
+    print((obs_hist - background).abs().sum())
+    with pyro.plate("bins", signal_dist.shape[0]):
+        return pyro.sample("observed", dist.Poisson(obs_hist), obs=observed)
 
 
 def runMCMC(model, *args, **kwargs):
@@ -30,41 +29,49 @@ def runMCMC(model, *args, **kwargs):
         adapt_mass_matrix=True,
         jit_compile=True,
     )
-    mcmc = MCMC(nuts_kernel, num_samples=800, warmup_steps=400,num_chains=1)
+    mcmc = MCMC(nuts_kernel, num_samples=800, warmup_steps=400, num_chains=1)
     mcmc.run(*args, **kwargs)
     return mcmc
 
 
+def runSVI(model, *args, **kwargs):
+    guide = pyro.infer.autoguide.AutoDelta(model)
+    adam = pyro.optim.Adam({"lr": 0.05})
+    elbo = pyro.infer.Trace_ELBO()
+    svi = pyro.infer.SVI(model, guide, adam, elbo)
+    losses = []
+    for step in range(200):
+        loss = svi.step(*args, **kwargs)
+        losses.append(loss)
+        if step % 1 == 0:
+            print("Elbo loss: {}".format(loss))
+    for name, value in pyro.get_param_store().items():
+        print(name, pyro.param(name).data.cpu().numpy())
+
+
 def main():
-    import sys
-
-    sample_manager = SampleManager()
-    sample_manager.loadSamplesFromDirectory("datasets")
-
-    reg_model = torch.load(Path(sys.argv[1]))
-    pred_dist = reg_model.posterior_dist
-    real = reg_model.test_data.Y
-    domain_mask = reg_model.domain_mask
-
-    sig_res = AnalysisResult.fromFile(sys.argv[2])
-    sighists = sig_res.getMergedHistograms(sample_manager)
-    sig_hist = sighists["ratio_m14_vs_m24"][
-        "signal_312_1500_900",
-        hist.loc(1000) : hist.loc(3000),
-        hist.loc(0.35) : hist.loc(1),
-    ]
-    signal_data = makeRegressionData(sig_hist)
-    signal_data = DataValues(
-        signal_data.X[domain_mask],
-        signal_data.Y[domain_mask],
-        signal_data.V[domain_mask],
-        signal_data.E,
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    d = torch.load(
+        "condor_results_2025_03_20/signal_312_1500_600/uncomp/inject_r_0p0/bkg_estimation_result.pth"
     )
-    signal_dist = signal_data.Y
-    obs = real + 1 * signal_dist
-    evars = getScaledEigenvecs(pred_dist.covariance_matrix)
-    mcmc = runMCMC(statModel, pred_dist.mean, evars, signal_dist, observed=obs)
-    mcmc.summary()
+    model = loadModel(d)
+    model = model.cuda()
+    all_data, bm = getModelingData(d)
+    all_data = all_data.toGpu()
+    m = all_data.Y >= 1
+    all_data = all_data.getMasked(m)
+    transform = d.transform.toCuda()
+    print(transform)
+    print(model)
+    pred_dist = getPosteriorProcess(model, all_data, transform)
+    s = torch.load(
+        "condor_results_2025_03_20/signal_312_1500_600/uncomp/signal_data.pth"
+    )
+    print(s)
+    # s[~bm] = 0
+    s = s["signal_data"].toGpu()
+    runSVI(statModel, pred_dist, s.Y[m], observed=pred_dist.mean.round())
+
 
 
 if __name__ == "__main__":

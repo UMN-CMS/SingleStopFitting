@@ -31,17 +31,18 @@ def createHists(obs, pred, signal_data, root_file, sig_percent=0.0):
     root_file["bkg_estimate"] = tensorToHist(mean)
     root_file["signal"] = tensorToHist(signal_data.Y)
     root_file["data_obs"] = tensorToHist(obs.Y)
-    wanted = vals > vals[0] * sig_percent
+    wanted = torch.sqrt(vals) >= torch.sqrt(vals[0]) * sig_percent
     nz = int(torch.count_nonzero(wanted))
     print(f"There are {nz} egeinvariations at least {sig_percent} of the max ")
     good_vals, good_vecs = vals[wanted], vecs[wanted]
-    print(vals)
     print(torch.max(vals))
     for i, (va, ve) in enumerate(zip(good_vals, good_vecs)):
+        v = torch.sqrt(va)
+        # v = va
         # print(f"Magnitude is {torch.abs(v).max()}")
-        h_up = tensorToHist(mean + va * ve)
+        h_up = tensorToHist(mean + v * ve)
         root_file[f"bkg_estimate_EVAR_{i}Up"] = h_up
-        h_down = tensorToHist(mean - va * ve)
+        h_down = tensorToHist(mean - v * ve)
         root_file[f"bkg_estimate_EVAR_{i}Down"] = h_down
     return nz
 
@@ -108,6 +109,7 @@ def main(args):
         bkg_data = torch.load(p)
         #obs, pred = getPrediction(bkg_data, model_class=fitting.models.NonStatParametric1D)
         # transform, all_data, obs, pred = getPrediction(bkg_data)#, model_class=fitting.models.NonStatParametric2D)
+        print(p)
         model = loadModel(bkg_data)
 
         obs, mask = getModelingData(bkg_data)

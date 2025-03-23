@@ -55,6 +55,9 @@ class DataTransformation:
         self.transform_x = transform_x
         self.transform_y = transform_y
 
+    def toCuda(self):
+        return DataTransformation(self.transform_x.toCuda(), self.transform_y.toCuda())
+
     def transformX(self, edges, X):
         return (
             self.transform_x.transformData(*edges),

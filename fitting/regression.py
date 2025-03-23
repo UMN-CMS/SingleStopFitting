@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 
+import copy
 import fitting.transformations as transformations
 import gpytorch
 import hist
@@ -106,10 +107,14 @@ class DataValues:
         return self.getMasked(m)
 
     def toGpu(self):
-        return DataValues(self.X.cuda(), self.Y.cuda(), self.V.cuda(), self.E)
+        return DataValues(
+            self.X.cuda(), self.Y.cuda(), self.V.cuda(), tuple(x.cuda() for x in self.E)
+        )
 
     def fromGpu(self):
-        return DataValues(self.X.cpu(), self.Y.cpu(), self.V.cpu(), self.E)
+        return DataValues(
+            self.X.cpu(), self.Y.cpu(), self.V.cpu(), tuple(x.cpu() for x in self.E)
+        )
 
     @property
     def dim(self):
@@ -177,6 +182,49 @@ def optimizeHyperparams(
     return model, likelihood, loss
 
 
+def updateModelNewData(
+    model, histogram, domain_blinder, window_blinder=None, learn_noise=False
+):
+    model = copy.deepcopy(model)
+    all_data = DataValues.fromHistogram(histogram)
+    domain_mask = domain_blinder(all_data.X, all_data.Y)
+    test_data = all_data[domain_mask]
+    if window_blinder is not None:
+        window_mask = window_blinder(test_data.X)
+    else:
+        window_mask = ~torch.ones_like(test_data.Y, dtype=bool)
+    train_data = test_data[~window_mask]
+    train_transform = transformations.getNormalizationTransform(train_data)
+    normalized_train_data = train_transform.transform(train_data)
+    normalized_test_data = train_transform.transform(test_data)
+
+    train = normalized_train_data
+    norm_test = normalized_test_data
+
+    likelihood = gpytorch.likelihoods.FixedNoiseGaussianLikelihood(
+        noise=train.V,
+        learn_additional_noise=learn_noise,
+        noise_constraint=gpytorch.constraints.GreaterThan(1e-10),
+    )
+    model.set_train_data(train.X, train.Y, strict=False)
+    model.likelhood = likelihood
+
+    model.eval()
+    likelihood.eval()
+
+    trained_model = TrainedModel(
+        model_class=type(model),
+        model_state=model.state_dict(),
+        input_data=histogram,
+        domain_mask=domain_mask,
+        blind_mask=window_mask,
+        transform=train_transform,
+        metadata={},
+        learned_noise=learn_noise,
+    )
+    return trained_model
+
+
 def doCompleteRegression(
     histogram,
     model_class,
@@ -189,15 +237,7 @@ def doCompleteRegression(
 ):
 
     all_data = DataValues.fromHistogram(histogram)
-    ##################################
-    ##################################
-    ##################################
-    # all_data.V = torch.clamp(all_data.V, min=10)
-    ##################################
-    ##################################
-    ##################################
     domain_mask = domain_blinder(all_data.X, all_data.Y)
-
     test_data = all_data[domain_mask]
 
     if window_blinder is not None:
