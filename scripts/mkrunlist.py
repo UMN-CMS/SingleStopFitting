@@ -19,6 +19,7 @@ def getMassArea(m):
         if m > x:
             return y
 
+
 def getCat(s, c):
     c = float(c)
     if c / s > 0.8:
@@ -38,12 +39,13 @@ def parseArgs():
 
     return parser.parse_args()
 
-def getFileNoCase(path,pattern):
-    for x in path.glob("*"):
+
+def getFileNoCase(path, pattern):
+    for x in path.rglob("*.pkl"):
         if x.name.lower() == pattern.lower():
             return x
     return None
-    
+
 
 def main():
     args = parseArgs()
@@ -53,9 +55,9 @@ def main():
         cats = getCat(s.stop, s.chargino)
         area = getMassArea(s.stop)
         for c in cats:
-            f = getFileNoCase(path, args.signal.format(c,c))
-            cols = ["signal_" + "_".join(map(str,s)), c, str(f)]
-            cols.append(args.background.format(c, area))
+            f = getFileNoCase(path, args.signal.format(area=area, cat=c, **s._asdict()))
+            cols = ["signal_" + "_".join(map(str, s)), f"Signal{s.coupling}", c, str(f)]
+            cols.append(args.background.format(area=area, cat=c, **s._asdict()))
             print(" ".join(cols))
 
 

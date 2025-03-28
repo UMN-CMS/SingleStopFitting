@@ -107,15 +107,10 @@ def main(args):
         signal_data_path = parent.parent / "signal_data.pth"
         sig_data = torch.load(signal_data_path)  # , weights_only=True)
         bkg_data = torch.load(p)
-        #obs, pred = getPrediction(bkg_data, model_class=fitting.models.NonStatParametric1D)
-        # transform, all_data, obs, pred = getPrediction(bkg_data)#, model_class=fitting.models.NonStatParametric2D)
-        print(p)
         model = loadModel(bkg_data)
-
         obs, mask = getModelingData(bkg_data)
         blinded = obs.getMasked(mask)
         pred = getPosteriorProcess(model, obs, bkg_data.transform)
-
         _, coupling ,mt, mx = signal_name.split("_")
         mt,mx = int(mt), int(mx)
         signal_metadata = dict(name=signal_name, coupling=coupling, mass_stop = mt, mass_chargino=mx, rate=bkg_data.metadata["signal_injected"])

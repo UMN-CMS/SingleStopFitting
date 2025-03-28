@@ -1,10 +1,13 @@
 import numpy as np
 
+import json
 import matplotlib.pyplot as plt
+from pathlib import Path
 import mplhep
 import pyro
 import pyro.distributions as pyrod
 import pyro.infer as pyroi
+import fitting.regression as regression
 import torch
 from matplotlib.patches import Polygon
 
@@ -168,3 +171,71 @@ def makePosteriorPred(
 
     data = {"chi2_pred": float(global_chi2_pred)}
     return data
+
+
+def chi2TestStat(post_pred, obs, **kwargs):
+    # return post_pred.mean(dim=-1)
+    return chi2Bins(post_pred, obs.Y, obs.V, min_var=1, power=1)
+
+
+def makePValuePlots(trained_model, save_dir, test_stat=None):
+    import matplotlib.pyplot as plt
+    import numpy as np
+    from scipy.stats import gaussian_kde
+
+    if test_stat is None:
+        test_stat = chi2TestStat
+
+    save_dir = Path(save_dir)
+    save_dir.mkdir(exist_ok=True, parents=True)
+
+    model = regression.loadModel(trained_model)
+    all_data, train_mask = regression.getModelingData(trained_model)
+
+    pred = regression.getPosteriorProcess(model, all_data, trained_model.transform)
+    pred_samples = getPosteriorPred(pred, num_samples=500)
+    post_pred = pred_samples["observed"]
+    obs = all_data.Y
+    dist = test_stat(post_pred, all_data).numpy()
+    obs_stat = test_stat(all_data.Y, all_data).numpy()
+
+    fig, ax = plt.subplots()
+
+    density = gaussian_kde(dist)
+    print(np.median(dist))
+    print(obs_stat)
+    xs = np.linspace(dist.min(), dist.max(), 200)
+
+    density.covariance_factor = lambda: 0.25
+    density._compute_covariance()
+
+    ax.plot(xs, density(xs))
+    fig.savefig(save_dir / "post_pred_density.png")
+
+    data = {
+        "chibins": {
+            "median": float(np.median(dist)),
+            "std": float(np.std(dist)),
+            "obs": float(obs_stat),
+        }
+    }
+
+    with open(save_dir / "post_pred_data.json", "w") as f:
+        json.dump(data, f)
+
+
+def runPValue(args):
+    out = args.outdir or Path(args.input).parent
+    m = torch.load(args.input)
+    makePValuePlots(m, out)
+
+
+def addPValueParser(parser):
+    import argparse
+
+    parser.add_argument(
+        "-o", "--outdir", default=None, help="Output directory for plots"
+    )
+    parser.add_argument("input")
+    parser.set_defaults(func=runPValue)
+    return parser

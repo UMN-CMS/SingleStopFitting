@@ -83,7 +83,6 @@ def estimateSingle2D(
     bkg_hist = background
     if min_base_variance:
         import numpy as np
-
         bkg_hist = bkg_hist.copy(deep=True)
         v = bkg_hist.view(flow=False).variance
         bkg_hist.view(flow=False).variance = np.clip(v, a_min=5, a_max=None)
@@ -91,13 +90,25 @@ def estimateSingle2D(
     a1, a2 = bkg_hist.axes
     a1_min, a1_max = a1.edges.min(), a1.edges.max()
     a2_min, a2_max = a2.edges.min(), a2.edges.max()
+    signal_hist_with_flow = signal_file[signal_name, signal_selection]["hist"]
+
+
+    bkg_hist = bkg_hist[hist.rebin(rebin_background), hist.rebin(rebin_background)]
+
 
     signal_hist = signal_file[signal_name, signal_selection]["hist"][
         hist.loc(a1_min) : hist.loc(a1_max),
         hist.loc(a2_min) : hist.loc(a2_max),
     ]
+
+    print(bkg_hist)
+    print(signal_hist)
+
     signal_hist = signal_hist[hist.rebin(rebin_signal), hist.rebin(rebin_signal)]
-    bkg_hist = bkg_hist[hist.rebin(rebin_background), hist.rebin(rebin_background)]
+    # 
+    # signal_hist = signal_hist_with_flow.copy(deep=True)
+    # signal_hist.view(flow=True).value = signal_hist_with_flow.values(flow=False)
+    # signal_hist.view(flow=True).variance = signal_hist_with_flow.variances(flow=False)
 
     sig_dir = base_dir  # / signal_name
     sig_dir.mkdir(exist_ok=True, parents=True)
@@ -148,7 +159,7 @@ def estimateSingle2D(
             trained_model = regress(
                 to_estimate,
                 base_dir,
-                min_counts=10,
+                min_counts=-1,
                 window=window,
                 use_cuda=True,
                 learning_rate=learning_rate,

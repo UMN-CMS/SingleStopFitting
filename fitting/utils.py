@@ -20,27 +20,23 @@ def pointsToGrid(points_x, points_y, edges, set_unfilled=None):
         return ret, filled.hist.bool()
 
 
-def dataToHist(X,Y,E,V=None):
+def dataToHist(X, Y, E, V=None):
     Z, filled = pointsToGrid(X, Y, E)
-    Z = np.where(filled.numpy(),  Z.hist.numpy(), np.nan)
+    Z = np.where(filled.numpy(), Z.hist.numpy(), np.nan)
     if V is not None:
         V, filled = pointsToGrid(X, V, E)
-        V = np.where(filled.numpy(),  V.hist.numpy(), np.nan)
+        V = np.where(filled.numpy(), V.hist.numpy(), np.nan)
 
-    return NumPyPlottableHistogram(
-        Z,
-        *tuple(x.numpy() for x in E),
-        variances=V
-    )
+    return NumPyPlottableHistogram(Z, *tuple(x.numpy() for x in E), variances=V)
 
 
-def chi2Bins(obs, exp, var, mask=None):
+def chi2Bins(obs, exp, var, mask=None, min_var=0, power=2):
     if mask is not None:
         obs, exp, var = obs[mask], exp[mask], var[mask]
-    m = var>5
-    obs,exp,var = obs[m], exp[m],var[m]
-    
-    return torch.sum((obs - exp).pow(2) / var) / obs.size(0)
+    m = var > min_var
+    obs, exp, var = obs[..., m], exp[..., m], var[..., m]
+
+    return torch.sum((obs - exp).pow(power) / var, dim=-1) / exp.size(-1)
 
 
 def fixMVN(mvn):
@@ -56,7 +52,7 @@ def affineTransformMVN(mvn, slope, intercept):
     cm = mvn.covariance_matrix
     mu = mvn.mean
     new_mu = slope * mu + intercept
-    d = slope * torch.eye(cm.shape[0],device=slope.device)
+    d = slope * torch.eye(cm.shape[0], device=slope.device)
     new_cm = d @ cm @ d.T
     ret = type(mvn)(new_mu, new_cm)
     return ret
@@ -83,6 +79,7 @@ def getScaledEigenvecs(cov_mat, top=None):
 
     return eva, eve
 
+
 def computePosterior(model, likelihood, data, slope=None, intercept=None):
     with torch.no_grad():
         pred_dist = model(data.X)
@@ -97,11 +94,3 @@ def computePosterior(model, likelihood, data, slope=None, intercept=None):
         )
 
     return pred_dist
-
-
-
-
-
-    
-    
-

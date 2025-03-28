@@ -16,7 +16,6 @@ def combineAll(files):
     ret = {}
     for f in files:
         f = Path(f)
-        print(f)
         parts = f.parts
         signal_part = next(x for x in parts if "signal_" in x)
         one = getOne(f)

@@ -232,13 +232,13 @@ class MyNNRBFModel2D(gpytorch.models.ExactGP):
         #     gpytorch.kernels.RBFKernel(ard_num_dims=2)
         # )
 
-        self.base_covar_module = gpytorch.kernels.ScaleKernel(
-            NNRBFKernel(idim=2, odim=2, layer_sizes=(16, 8))
-        )
-
         # self.base_covar_module = gpytorch.kernels.ScaleKernel(
-        #     NNMaternKernel(idim=2, odim=2, layer_sizes=(4,)), mu=2.5
+        #     NNRBFKernel(idim=2, odim=2, layer_sizes=(16, 8))
         # )
+
+        self.base_covar_module = gpytorch.kernels.ScaleKernel(
+            NNMaternKernel(idim=2, odim=2, layer_sizes=(8,4)), mu=2.5
+        )
 
         self.covar_module = gpytorch.kernels.InducingPointKernel(
             self.base_covar_module,
