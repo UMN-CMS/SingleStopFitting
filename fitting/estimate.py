@@ -8,6 +8,7 @@ from .regression import DataValues
 
 import hist
 import matplotlib as mpl
+from .utils import chi2Bins
 import matplotlib.pyplot as plt
 import mplhep
 import torch
@@ -29,6 +30,20 @@ def saveDiagnosticPlots(plots, save_dir):
         plt.close(fig)
 
 
+def validate(model, train, test, window_mask):
+    import torch
+
+    model.eval()
+    post_reg = model(test.X).mean
+    chi2_blind_post_raw = chi2Bins(post_reg, test.Y, test.V, mask=window_mask)
+    chi2_post_raw = chi2Bins(post_reg, test.Y, test.V, mask=~window_mask)
+    logger.info(
+        f"Validate Chi2 (seen={chi2_post_raw:0.3f}) (blind={chi2_blind_post_raw:0.3f})"
+    )
+
+    model.train()
+
+
 def regress(
     data,
     base_save_dir,
@@ -43,7 +58,9 @@ def regress(
     base_save_dir = Path(base_save_dir)
     base_save_dir.mkdir(exist_ok=True, parents=True)
 
+    # model = models.NonStatParametric2D
     model = models.MyNNRBFModel2D
+    # model = models.MyVariational2DModel
 
     trained_model = regression.doCompleteRegression(
         data,
@@ -54,6 +71,7 @@ def regress(
         use_cuda=use_cuda,
         learn_noise=False,
         lr=learning_rate,
+        validate_function=validate,
     )
     return trained_model
 
@@ -76,6 +94,7 @@ def estimateSingle2D(
     rebin_background=1,
     min_base_variance=None,
     use_other_model=None,
+    use_other_kernel=None,
 ):
     signal_injections = signal_injections or [0.0, 1.0, 4.0, 16.0]
     base_dir = Path(base_dir)
@@ -188,7 +207,7 @@ def estimateSingle2D(
             trained_model = regress(
                 to_estimate,
                 base_dir,
-                min_counts=10,
+                min_counts=20,
                 window=window,
                 use_cuda=True,
                 iterations=iterations,
@@ -227,7 +246,6 @@ def main(args):
         iterations=args.iterations,
         rebin_background=args.rebin_background,
         blinding_signal=args.blind_signal,
-        # signal_injections=[0.0, 1.0, 4.0, 16.0],
         scale_background=args.scale_background,
         signal_injections=args.injected,
         min_base_variance=5,

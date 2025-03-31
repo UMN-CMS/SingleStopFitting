@@ -16,7 +16,7 @@ log             = logs/log.$(cluster).$(process)
 stream_error=true
 stream_output=true
 
-OUTDIR=condor_results_2025_03_30/$(SIGNAL_NAME)/$(SUB_SIG_PATH)
+OUTDIR=condor_results_2025_03_31/$(SIGNAL_NAME)/$(SUB_SIG_PATH)
 
 
 environment = "OUTDIR=$(OUTDIR)"

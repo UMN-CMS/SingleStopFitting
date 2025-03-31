@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 
+import linear_operator
 import copy
 import fitting.transformations as transformations
 import gpytorch
@@ -148,15 +149,13 @@ class DataValues:
 
 
 def optimizeHyperparams(
-    model,
-    likelihood,
-    train_data,
-    iterations=200,
-    lr=0.01,
+    model, likelihood, train_data, iterations=200, lr=0.01, validate_function=None
 ):
     model.train()
     likelihood.train()
-    logger.info(f"Optimizing hyperparameters on {len(train_data.Y)} data points")
+    logger.info(
+        f"Optimizing {sum(torch.numel(x) for x in model.parameters())} hyperparameters on {len(train_data.Y)} data points"
+    )
 
     # logger.info(list(model.named_parameters()))
     # logger.info(list(model.parameters()))
@@ -174,8 +173,8 @@ def optimizeHyperparams(
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
 
     mll = gpytorch.mlls.ExactMarginalLogLikelihood(likelihood, model)
-    # mll = gpytorch.mlls.LeaveOneOutPseudoLikelihood(likelihood, model)
-    # mll = gpytorch.mlls.VariationalELBO(likelihood, model, train_data.Y.numel())
+    mll = gpytorch.mlls.LeaveOneOutPseudoLikelihood(likelihood, model)
+    mll = gpytorch.mlls.VariationalELBO(likelihood, model, train_data.Y.numel())
 
     # scheduler = torch.optim.lr_scheduler.StepLR(
     #     optimizer, step_size=iterations // 1, gamma=0.1
@@ -184,16 +183,20 @@ def optimizeHyperparams(
     # logger.info(f"Using mll: {mll}")
     evidence = None
 
-    for i in range(iterations):
-        optimizer.zero_grad()
-        output = model(train_data.X)
-        loss = -mll(output, train_data.Y)
-        loss.backward()
-        optimizer.step()
-        # scheduler.step()
-        # slr = scheduler.get_last_lr()[0]
-        if (i % (iterations // 20) == 0) or i == iterations - 1:
-            logger.info(f"Iter {i} (lr={lr:0.4f}): Loss={round(loss.item(),4)}")
+    with linear_operator.settings.max_cg_iterations(10000):
+        for i in range(iterations):
+            optimizer.zero_grad()
+            output = model(train_data.X)
+            loss = -mll(output, train_data.Y)
+            loss.backward()
+            optimizer.step()
+            # scheduler.step()
+            # slr = scheduler.get_last_lr()[0]
+            if (i % (iterations // 20) == 0) or i == iterations - 1:
+                logger.info(f"Iter {i} (lr={lr:0.4f}): Loss={round(loss.item(),4)}")
+                if validate_function is not None:
+                    validate_function(model)
+            torch.cuda.empty_cache()
 
     return model, likelihood, loss
 
@@ -216,7 +219,6 @@ def updateModelNewData(
 
     train = normalized_train_data
     norm_test = normalized_test_data
-
 
     likelihood = gpytorch.likelihoods.FixedNoiseGaussianLikelihood(
         noise=train.V,
@@ -251,6 +253,7 @@ def doCompleteRegression(
     iterations=300,
     lr=0.001,
     learn_noise=False,
+    validate_function=None,
 ):
 
     all_data = DataValues.fromHistogram(histogram)
@@ -286,21 +289,27 @@ def doCompleteRegression(
     likelihood = gpytorch.likelihoods.FixedNoiseGaussianLikelihood(
         noise=train.V,
         learn_additional_noise=learn_noise,
-        noise_constraint=gpytorch.constraints.GreaterThan(1e-20),
+        noise_constraint=gpytorch.constraints.GreaterThan(1e-10),
     )
 
     model = model_class(train.X, train.Y, likelihood)
+    logger.info(f"Using model:")
+    logger.info(model)
 
     if torch.cuda.is_available() and use_cuda:
         model = model.cuda()
         likelihood = likelihood.cuda()
 
+    if validate_function is not None:
+
+        def vf(model):
+            validate_function(model, train, norm_test, window_mask)
+
+    else:
+        vf = None
+
     model, likelihood, evidence = optimizeHyperparams(
-        model,
-        likelihood,
-        train,
-        iterations=iterations,
-        lr=lr,
+        model, likelihood, train, iterations=iterations, lr=lr, validate_function=vf
     )
 
     if torch.cuda.is_available() and use_cuda:
