@@ -3,25 +3,28 @@ from fitting.utils import getScaledEigenvecs
 import gpytorch
 
 from .regression import DataValues
+import torch
 
 import matplotlib.pyplot as plt
 from rich import print
 
 from . import regression
 from .plotting.plots import makeDiagnosticPlots, makeCovariancePlots, plotRaw
-from .predictive import makePosteriorPred
+from .predictive import makePosteriorPred, makePValuePlots
 from .utils import chi2Bins
 
 
 def plotDiagnostics(save_dir, trained_model, **kwargs):
     model = regression.loadModel(trained_model)
+    _, coupling, mt, mx = trained_model.metadata["signal_name"].split("_")
+    mt, mx = float(mt), float(mx)
     all_data, train_mask = regression.getModelingData(trained_model)
     pred_dist = regression.getPosteriorProcess(model, all_data, trained_model.transform)
 
     pred_data = DataValues(all_data.X, pred_dist.mean, pred_dist.variance, all_data.E)
 
     mask = all_data.V > 0
-    global_chi2_bins = chi2Bins(pred_data.Y, all_data.Y, all_data.V, mask)
+    global_chi2_bins = chi2Bins(pred_data.Y, all_data.Y, all_data.V, mask & ~train_mask)
     blinded_chi2_bins = chi2Bins(all_data.Y, pred_data.Y, all_data.V, train_mask & mask)
 
     # final_nlpd = gpytorch.metrics.negative_log_predictive_density(pred_dist, test_y)
@@ -39,12 +42,18 @@ def plotDiagnostics(save_dir, trained_model, **kwargs):
     save_dir = Path(save_dir)
     save_dir.mkdir(exist_ok=True, parents=True)
 
-    def saveFunc(name, fig):
-        ext = "png"
-        name = name.replace("(", "").replace(")", "").replace(".", "p")
-        print(name)
-        fig.savefig((save_dir / name).with_suffix(f".{ext}"))
-        plt.close(fig)
+    def saveFunc(name, obj):
+        import json
+
+        if isinstance(obj, dict):
+            with open(save_dir / f"{name}.json", "w") as f:
+                json.dump(obj, f)
+        else:
+            ext = "png"
+            name = name.replace("(", "").replace(")", "").replace(".", "p")
+            print(name)
+            obj.savefig((save_dir / name).with_suffix(f".{ext}"))
+            plt.close(obj)
 
     diagnostic_plots = makeDiagnosticPlots(
         pred_data,
@@ -56,6 +65,9 @@ def plotDiagnostics(save_dir, trained_model, **kwargs):
     )
 
     makePosteriorPred(pred_dist, all_data, saveFunc, train_mask)
+    for point in [[mt, mx / mt]]:
+        makeCovariancePlots(model, trained_model.transform, all_data, point, saveFunc)
+    makePValuePlots(pred_dist, all_data, train_mask, saveFunc)
 
 
 def plotCovarsForPoints(save_dir, trained_model, points):
@@ -196,4 +208,3 @@ def addEigensToParser(parser):
     )
     parser.add_argument("input")
     parser.set_defaults(func=runEigens)
-    return parser

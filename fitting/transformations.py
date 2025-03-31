@@ -32,9 +32,11 @@ class LinearTransform:
             )
 
     def transformVariances(self, v):
+        # return v / self.slope
         return v / self.slope**2
 
     def iTransformVariances(self, v):
+        # return v * self.slope
         return v * self.slope**2
 
     def __repr__(self):
@@ -111,8 +113,11 @@ def getNormalizationTransform(dv, scale=1.0) -> DataTransformation:
     # input_scale = max_x - min_x
 
     transform_x = LinearTransform(scale * (max_x - min_x), min_x)
-    # transform_y = LinearTransform(scale * (max_y - min_y), min_y)
-    transform_y = LinearTransform(scale * std_y, mean_y)
+    transform_y = LinearTransform((max_y - min_y), min_y)
+    # transform_y = LinearTransform( std_y, mean_y)
+    # transform_y = LinearTransform(max_y, torch.Tensor([0.0]))
+    # transform_y = LinearTransform(torch.Tensor([1.0]), torch.Tensor([0.0]))
+    # transform_y = LogTransform()
 
     # transform_y = LinearTransform(torch.tensor([1.0]), torch.tensor([1.0]))
     # transform_y = LinearTransform(scale * value_scale, min_y)

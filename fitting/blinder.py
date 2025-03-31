@@ -1,7 +1,6 @@
 from dataclasses import dataclass
 
 import numpy as np
-import scipy.optimize
 import torch
 
 
@@ -46,6 +45,7 @@ def gaussian2D(X, amplitude, xo, yo, sigma_x, sigma_y, theta):
 
 
 def makeWindow2D(signal_data, spread=1.0):
+    import scipy.optimize
     X = signal_data.X
     s = X.max(dim=0).values
     X = X / s

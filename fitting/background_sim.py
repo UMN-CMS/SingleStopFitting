@@ -140,7 +140,8 @@ def handleSim(args):
         outdir = Path(args.outdir)
         outdir.mkdir(exist_ok=True, parents=True)
         with open(outdir / f"background.pkl", "wb") as f:
-            pkl.dump(hist, f)
+            pkl.dump(h, f)
+
     else:
         makeSimulatedBackground(h, args.outdir, use_cuda=args.use_cuda)
 

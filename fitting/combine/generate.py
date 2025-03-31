@@ -38,7 +38,6 @@ def createHists(obs, pred, signal_data, root_file, sig_percent=0.0):
     print(torch.max(vals))
     for i, (va, ve) in enumerate(zip(good_vals, good_vecs)):
         v = torch.sqrt(va)
-        # v = va
         # print(f"Magnitude is {torch.abs(v).max()}")
         h_up = tensorToHist(mean + v * ve)
         root_file[f"bkg_estimate_EVAR_{i}Up"] = h_up

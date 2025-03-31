@@ -18,7 +18,7 @@ import hist
 import torch
 
 from . import transformations
-from .utils import dataToHist, computePosterior
+from .utils import dataToHist, computePosterior, chi2Bins
 
 logger = logging.getLogger(__name__)
 
@@ -156,15 +156,32 @@ def optimizeHyperparams(
 ):
     model.train()
     likelihood.train()
+    logger.info(f"Optimizing hyperparameters on {len(train_data.Y)} data points")
+
+    # logger.info(list(model.named_parameters()))
+    # logger.info(list(model.parameters()))
+    # optimizer = torch.optim.Adam(
+    #     [
+    #         {"params": [y for x, y in model.named_parameters() if "outscale" not in x]},
+    #         {
+    #             "params": [y for x, y in model.named_parameters() if "outscale" in x],
+    #             "lr": 1e10,
+    #         },
+    #     ],
+    #     lr=lr,
+    # )
 
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
 
     mll = gpytorch.mlls.ExactMarginalLogLikelihood(likelihood, model)
+    # mll = gpytorch.mlls.LeaveOneOutPseudoLikelihood(likelihood, model)
     # mll = gpytorch.mlls.VariationalELBO(likelihood, model, train_data.Y.numel())
 
-    scheduler = torch.optim.lr_scheduler.StepLR(
-        optimizer, step_size=iterations // 1, gamma=0.1
-    )
+    # scheduler = torch.optim.lr_scheduler.StepLR(
+    #     optimizer, step_size=iterations // 1, gamma=0.1
+    # )
+
+    # logger.info(f"Using mll: {mll}")
     evidence = None
 
     for i in range(iterations):
@@ -173,11 +190,10 @@ def optimizeHyperparams(
         loss = -mll(output, train_data.Y)
         loss.backward()
         optimizer.step()
-        scheduler.step()
-        slr = scheduler.get_last_lr()[0]
-
+        # scheduler.step()
+        # slr = scheduler.get_last_lr()[0]
         if (i % (iterations // 20) == 0) or i == iterations - 1:
-            logger.info(f"Iter {i} (lr={slr:0.4f}): Loss={round(loss.item(),4)}")
+            logger.info(f"Iter {i} (lr={lr:0.4f}): Loss={round(loss.item(),4)}")
 
     return model, likelihood, loss
 
@@ -201,10 +217,11 @@ def updateModelNewData(
     train = normalized_train_data
     norm_test = normalized_test_data
 
+
     likelihood = gpytorch.likelihoods.FixedNoiseGaussianLikelihood(
         noise=train.V,
         learn_additional_noise=learn_noise,
-        noise_constraint=gpytorch.constraints.GreaterThan(1e-10),
+        noise_constraint=gpytorch.constraints.GreaterThan(1e-20),
     )
     model.set_train_data(train.X, train.Y, strict=False)
     model.likelhood = likelihood
@@ -263,11 +280,15 @@ def doCompleteRegression(
         train = normalized_train_data
         norm_test = normalized_test_data
 
+    # logger.info(train.Y)
+    # logger.info(train.V)
+    # logger.info(f"Learn additional noise is: {learn_noise}")
     likelihood = gpytorch.likelihoods.FixedNoiseGaussianLikelihood(
         noise=train.V,
         learn_additional_noise=learn_noise,
-        noise_constraint=gpytorch.constraints.GreaterThan(1e-10),
+        noise_constraint=gpytorch.constraints.GreaterThan(1e-20),
     )
+
     model = model_class(train.X, train.Y, likelihood)
 
     if torch.cuda.is_available() and use_cuda:
@@ -288,6 +309,13 @@ def doCompleteRegression(
 
     model.eval()
     likelihood.eval()
+
+    # normalized_chi2 = model
+    # post_reg = model(normalized_test_data.X).mean
+    # post_blind = post_reg[~window_mask]
+    # tr = torch.exp(post_reg)
+    # chi2_blind_post_raw = chi2Bins(tr, test_data.Y, test_data.V, mask=window_mask)
+    # logger.info(f"Chi2Blind raw: {chi2_blind_post_raw:0.3f}")
 
     trained_model = TrainedModel(
         model_class=model_class,

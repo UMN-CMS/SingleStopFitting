@@ -178,11 +178,80 @@ def chi2TestStat(post_pred, obs, **kwargs):
     return chi2Bins(post_pred, obs.Y, obs.V, min_var=1, power=1)
 
 
-def makePValuePlots(trained_model, save_dir, test_stat=None):
+# def chi2TestStat(post_pred, obs, **kwargs):
+#     return torch.mean(post_pred, dim=-1)
+
+
+def makePValuePlots(pred, all_data, train_mask, save_func, test_stat=chi2TestStat):
     import matplotlib.pyplot as plt
     import numpy as np
     from scipy.stats import gaussian_kde
 
+    pred_samples = getPosteriorPred(pred, num_samples=500)
+    post_pred = pred_samples["observed"]
+    obs = all_data.Y
+    dist = test_stat(post_pred, all_data).numpy()
+    obs_stat = test_stat(all_data.Y, all_data).numpy()
+    quantile = np.count_nonzero(dist < obs_stat) / dist.size
+
+    fig, ax = plt.subplots()
+    density = gaussian_kde(dist)
+    print(
+        f"Predictive dist mean/median/std: {np.mean(dist):0.4f}/{np.median(dist):0.4f}/{np.std(dist):0.4f}"
+    )
+    print(f"Observed data val: {obs_stat:0.4f}")
+
+    xs = np.linspace(dist.min(), dist.max(), 200)
+    density.covariance_factor = lambda: 0.25
+    density._compute_covariance()
+    ax.plot(xs, density(xs))
+    ax.axvline(obs_stat, 0, 1, color="red")
+    ax.scatter(dist, np.zeros_like(dist))
+    save_func("post_pred_density", fig)
+
+    obs_blind = all_data.Y[train_mask]
+    dist_blind = test_stat(
+        post_pred[:, train_mask], all_data.getMasked(train_mask)
+    ).numpy()
+    obs_stat_blind = test_stat(
+        all_data.Y[train_mask], all_data.getMasked(train_mask)
+    ).numpy()
+    quantile_blind = np.count_nonzero(dist_blind < obs_stat_blind) / dist_blind.size
+
+    print(
+        f"Predictive blind dist mean/median/std: {np.mean(dist_blind):0.4f}/{np.median(dist_blind):0.4f}/{np.std(dist_blind):0.4f}"
+    )
+    print(f"Observed blind data val: {obs_stat_blind:0.4f}")
+    print(f"Blind quantile: {quantile_blind:0.4f}")
+
+    xs = np.linspace(dist_blind.min(), dist_blind.max(), 200)
+    fig, ax = plt.subplots()
+    density = gaussian_kde(dist_blind)
+    density.covariance_factor = lambda: 0.25
+    density._compute_covariance()
+    ax.plot(xs, density(xs))
+    ax.scatter(dist_blind, np.zeros_like(dist_blind))
+    ax.axvline(obs_stat_blind, 0, 1, color="red")
+    save_func("post_pred_density_blind", fig)
+
+    data = {
+        "chibins": {
+            "median": float(np.median(dist)),
+            "std": float(np.std(dist)),
+            "obs": float(obs_stat),
+            "quantile": float(quantile),
+        },
+        "chibinsblind": {
+            "median": float(np.median(dist_blind)),
+            "std": float(np.std(dist_blind)),
+            "obs": float(obs_stat_blind),
+            "quantile": float(quantile_blind),
+        },
+    }
+    save_func("post_pred_data", data)
+
+
+def makePValuePlotsFromModel(trained_model, save_dir, test_stat=None):
     if test_stat is None:
         test_stat = chi2TestStat
 
@@ -193,41 +262,32 @@ def makePValuePlots(trained_model, save_dir, test_stat=None):
     all_data, train_mask = regression.getModelingData(trained_model)
 
     pred = regression.getPosteriorProcess(model, all_data, trained_model.transform)
-    pred_samples = getPosteriorPred(pred, num_samples=500)
-    post_pred = pred_samples["observed"]
-    obs = all_data.Y
-    dist = test_stat(post_pred, all_data).numpy()
-    obs_stat = test_stat(all_data.Y, all_data).numpy()
 
-    fig, ax = plt.subplots()
+    def saveFunc(name, obj):
+        if isinstance(obj, dict):
+            import json
 
-    density = gaussian_kde(dist)
-    print(np.median(dist))
-    print(obs_stat)
-    xs = np.linspace(dist.min(), dist.max(), 200)
+            with open(save_dir / f"{name}.json", "w") as f:
+                json.dump(obj, f)
+        else:
+            ext = "png"
+            name = name.replace("(", "").replace(")", "").replace(".", "p")
+            print(name)
+            obj.savefig((save_dir / name).with_suffix(f".{ext}"))
+            plt.close(obj)
 
-    density.covariance_factor = lambda: 0.25
-    density._compute_covariance()
-
-    ax.plot(xs, density(xs))
-    fig.savefig(save_dir / "post_pred_density.png")
-
-    data = {
-        "chibins": {
-            "median": float(np.median(dist)),
-            "std": float(np.std(dist)),
-            "obs": float(obs_stat),
-        }
-    }
-
-    with open(save_dir / "post_pred_data.json", "w") as f:
-        json.dump(data, f)
+    makePValuePlots(pred, all_data, train_mask, saveFunc, test_stat=test_stat)
 
 
 def runPValue(args):
+    import matplotlib as mpl
+    import mplhep
+
+    mpl.use("Agg")
+    mplhep.style.use("CMS")
     out = args.outdir or Path(args.input).parent
     m = torch.load(args.input)
-    makePValuePlots(m, out)
+    makePValuePlotsFromModel(m, out)
 
 
 def addPValueParser(parser):

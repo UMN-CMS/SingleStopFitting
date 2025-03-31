@@ -1,5 +1,4 @@
 from pathlib import Path
-from rich import print
 import argparse
 from collections import namedtuple
 import re
