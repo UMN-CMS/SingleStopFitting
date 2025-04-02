@@ -157,30 +157,8 @@ def optimizeHyperparams(
         f"Optimizing {sum(torch.numel(x) for x in model.parameters())} hyperparameters on {len(train_data.Y)} data points"
     )
 
-    # logger.info(list(model.named_parameters()))
-    # logger.info(list(model.parameters()))
-    # optimizer = torch.optim.Adam(
-    #     [
-    #         {"params": [y for x, y in model.named_parameters() if "outscale" not in x]},
-    #         {
-    #             "params": [y for x, y in model.named_parameters() if "outscale" in x],
-    #             "lr": 1e10,
-    #         },
-    #     ],
-    #     lr=lr,
-    # )
-
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
-
     mll = gpytorch.mlls.ExactMarginalLogLikelihood(likelihood, model)
-    mll = gpytorch.mlls.LeaveOneOutPseudoLikelihood(likelihood, model)
-    mll = gpytorch.mlls.VariationalELBO(likelihood, model, train_data.Y.numel())
-
-    # scheduler = torch.optim.lr_scheduler.StepLR(
-    #     optimizer, step_size=iterations // 1, gamma=0.1
-    # )
-
-    # logger.info(f"Using mll: {mll}")
     evidence = None
 
     with linear_operator.settings.max_cg_iterations(10000):
@@ -197,6 +175,42 @@ def optimizeHyperparams(
                 if validate_function is not None:
                     validate_function(model)
             torch.cuda.empty_cache()
+
+    return model, likelihood, loss
+
+
+def optimizeHyperparamsVar(
+    model, likelihood, train_data, iterations=200, lr=0.01, validate_function=None
+):
+    from torch.utils.data import TensorDataset, DataLoader
+
+    model.train()
+    likelihood.train()
+    logger.info(
+        f"Optimizing {sum(torch.numel(x) for x in model.parameters())} hyperparameters on {len(train_data.Y)} data points"
+    )
+
+    optimizer = torch.optim.Adam(model.parameters(), lr=lr)
+
+    mll = gpytorch.mlls.VariationalELBO(likelihood, model, train_data.Y.size(0))
+
+    evidence = None
+    train_dataset = TensorDataset(train_data.X, train_data.Y)
+    train_loader = DataLoader(train_dataset, batch_size=1024, shuffle=True)
+
+    for i in range(iterations):
+        # Within each iteration, we will go over each minibatch of data
+        minibatch_iter = train_loader
+        for x_batch, y_batch in minibatch_iter:
+            optimizer.zero_grad()
+            output = model(x_batch)
+            loss = -mll(output, y_batch)
+            loss.backward()
+            optimizer.step()
+        if (i % (iterations // 20) == 0) or i == iterations - 1:
+            logger.info(f"Iter {i} (lr={lr:0.4f}): Loss={round(loss.item(),4)}")
+            if validate_function is not None:
+                validate_function(model)
 
     return model, likelihood, loss
 
@@ -258,14 +272,14 @@ def doCompleteRegression(
 
     all_data = DataValues.fromHistogram(histogram)
     domain_mask = domain_blinder(all_data.X, all_data.Y)
-    test_data = all_data[domain_mask]
 
+    test_data = all_data[domain_mask]
     if window_blinder is not None:
         window_mask = window_blinder(test_data.X)
     else:
         window_mask = ~torch.ones_like(test_data.Y, dtype=bool)
 
-    train_data = test_data[~window_mask]
+    train_data = test_data[~window_mask][::1]
     # print(torch.count_nonzero(domain_mask))
     # print(torch.count_nonzero(window_mask))
     # print(test_data.X.shape)
@@ -292,6 +306,8 @@ def doCompleteRegression(
         noise_constraint=gpytorch.constraints.GreaterThan(1e-10),
     )
 
+    # likelihood = gpytorch.likelihoods.GaussianLikelihood()
+
     model = model_class(train.X, train.Y, likelihood)
     logger.info(f"Using model:")
     logger.info(model)
@@ -308,9 +324,14 @@ def doCompleteRegression(
     else:
         vf = None
 
-    model, likelihood, evidence = optimizeHyperparams(
-        model, likelihood, train, iterations=iterations, lr=lr, validate_function=vf
-    )
+    if isinstance(model, gpytorch.models.ApproximateGP):
+        model, likelihood, evidence = optimizeHyperparamsVar(
+            model, likelihood, train, iterations=iterations, lr=lr, validate_function=vf
+        )
+    else:
+        model, likelihood, evidence = optimizeHyperparams(
+            model, likelihood, train, iterations=iterations, lr=lr, validate_function=vf
+        )
 
     if torch.cuda.is_available() and use_cuda:
         model = model.cpu()

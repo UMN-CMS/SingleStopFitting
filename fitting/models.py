@@ -16,6 +16,8 @@ import logging
 logger = logging.getLogger(__name__)
 torch.set_default_dtype(torch.float64)
 
+SK = gpytorch.kernels.ScaleKernel
+
 
 class RotParamMixin:
     def __init__(self, *args, rot_prior=None, rot_constraint=None, **kwargs):
@@ -229,33 +231,40 @@ class MyNNRBFModel2D(gpytorch.models.ExactGP):
         # self.base_covar_module = gpytorch.kernels.ScaleKernel(
         #     NNMaternKernel(idim=2, odim=2, layer_sizes=(16, 8))
         # )
-        base_covar_module = gpytorch.kernels.ScaleKernel(
-            NNRBFKernel(idim=2, odim=2, layer_sizes=(16,8))
-            # + NNMaternKernel(idim=2, odim=2, layer_sizes=(4,))
-            # + NonStatKernel(counts=3)
-            # gpytorch.kernels.RBFKernel(ard_num_dims=2)
+        base_covar_module = SK(NNMaternKernel(idim=2, odim=2, layer_sizes=(8, 4))) + SK(
+            gpytorch.kernels.RBFKernel(ard_num_dims=2)
         )
 
-        # self.base_covar_module = gpytorch.kernels.ScaleKernel(gpytorch.kernels.RBFKernel(ard_num_dims=2))
+        # base_covar_module = NNSMKernel(num_mixtures=4).cuda()
+        # base_covar_module.initialize_from_data(train_x, train_y)
+
+        # base_covar_module = gpytorch.kernels.ScaleKernel(
+        #     gpytorch.kernels.RBFKernel(ard_num_dims=2)
+        # )
 
         # self.feature_extractor = LargeFeatureExtractor(
-        #     odim=2, idim=2, layer_sizes=(32, 16, 8)
+        #     odim=2, idim=2, layer_sizes=(8,4)
         # )
+
+        print("HERE")
 
         self.covar_module = gpytorch.kernels.InducingPointKernel(
             base_covar_module,
             likelihood=likelihood,
             inducing_points=ind,
         )
-        # self.covar_module.inducing_points.requires_grad = False
+
         # self.covar_module = base_covar_module
-        # gs  = gpytorch.utils.grid.choose_grid_size(train_x)
+
+        # self.covar_module.inducing_points.requires_grad = False
+        # gs = gpytorch.utils.grid.choose_grid_size(train_x, 0.25)
         # logger.info(f"Grid size is {gs}")
         # self.covar_module = gpytorch.kernels.GridInterpolationKernel(
-        #         gpytorch.kernels.ScaleKernel(gpytorch.kernels.RBFKernel(ard_num_dims=2)),
-        #         num_dims=2, grid_size=gs
-        #     )
-        # self.scale_to_bounds = gpytorch.utils.grid.ScaleToBounds(-1.0, 1.0)
+        #     gpytorch.kernels.ScaleKernel(gpytorch.kernels.RBFKernel(ard_num_dims=2)),
+        #     num_dims=2,
+        #     grid_size=gs,
+        # )
+        self.scale_to_bounds = gpytorch.utils.grid.ScaleToBounds(-1.0, 1.0)
 
     def forward(self, x):
         # x = self.feature_extractor(x)
@@ -267,19 +276,22 @@ class MyNNRBFModel2D(gpytorch.models.ExactGP):
 
 class MyVariational2DModel(gpytorch.models.ApproximateGP):
     def __init__(self, train_x, train_y, likelihood, inducing_ratio=1):
-        variational_distribution = CholeskyVariationalDistribution(train_x.size(0))
-
-        self.inducing_ratio = inducing_ratio
-
+        inducing_points = train_x.clone()[::inducing_ratio]
+        variational_distribution = CholeskyVariationalDistribution(
+            inducing_points.size(0)
+        )
         variational_strategy = VariationalStrategy(
-            self, train_x, variational_distribution, learn_inducing_locations=True
+            self,
+            inducing_points,
+            variational_distribution,
+            learn_inducing_locations=True,
         )
         super().__init__(variational_strategy)
 
         self.likelihood = likelihood
         self.scale_to_bounds = gpytorch.utils.grid.ScaleToBounds(-1.0, 1.0)
 
-        self.mean_module = gpytorch.means.ZeroMean()
+        self.mean_module = gpytorch.means.ConstantMean()
 
         self.covar_module = gpytorch.kernels.ScaleKernel(
             gpytorch.kernels.RBFKernel(ard_num_dims=2)

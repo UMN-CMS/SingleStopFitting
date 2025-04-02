@@ -2,9 +2,9 @@
 
 background_dir="backgrounds/control_background_2025_03_29"
 
-low=500,1700
-med=800,2200
-high=1300,2700
+low=500,1500
+med=1000,2000
+high=1500,2500
 
 # low=500,1500
 # med=1000,2000

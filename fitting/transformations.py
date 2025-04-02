@@ -52,6 +52,24 @@ class LinearTransform:
         return x
 
 
+class AnscombeTransform:
+    def __init__(self, slope, intercept=None):
+        self.slope = torch.atleast_1d(slope)
+        self.intercept = torch.atleast_1d(intercept)
+
+    def transformData(self, y):
+        return ((2 * torch.sqrt(y + 3 / 8)) - self.intercept) / self.slope
+
+    def iTransformData(self, y):
+        return (((y * self.slope) + self.intercept) / 2) ** 2 - 3 / 8
+
+    def transformVariances(self, v):
+        return v
+
+    def iTransformVariances(self, v):
+        return v
+
+
 class DataTransformation:
     def __init__(self, transform_x, transform_y):
         self.transform_x = transform_x
@@ -114,6 +132,8 @@ def getNormalizationTransform(dv, scale=1.0) -> DataTransformation:
 
     transform_x = LinearTransform(scale * (max_x - min_x), min_x)
     transform_y = LinearTransform((max_y - min_y), min_y)
+
+    # transform_y = AnscombeTransform(torch.tensor([100.0]), torch.Tensor([0.0]))
     # transform_y = LinearTransform( std_y, mean_y)
     # transform_y = LinearTransform(max_y, torch.Tensor([0.0]))
     # transform_y = LinearTransform(torch.Tensor([1.0]), torch.Tensor([0.0]))
