@@ -2,7 +2,10 @@
 
 application_root="/srv"
 application_data="$application_root/.application_data"
-container="/cvmfs/unpacked.cern.ch/registry.hub.docker.com/cmsml/cmsml:3.10"
+container="/cvmfs/unpacked.cern.ch/registry.hub.docker.com/cmsml/cmsml:3.11-cuda"
+# container="/cvmfs/unpacked.cern.ch/registry.hub.docker.com/fnallpc/fnallpc-docker:tensorflow-latest-gpu-singularity"
+# container="/cvmfs/unpacked.cern.ch/registry.hub.docker.com/pyhf/pyhf:jax-cuda10.1-cudnn7-runtime-ubuntu18.04"
+# container="/cvmfs/unpacked.cern.ch/registry.hub.docker.com/fnallpc/fnallpc-docker:pytorch-2.0.0-cuda11.7-cudnn8-runtime-singularity"
 env_extras=""
 virtual_env_path="$application_data/venv"
 
@@ -50,7 +53,8 @@ function create_venv(){
     
     trap 'rm -rf -- "$TMPDIR"' EXIT
 
-    python3 -m venv --system-site-packages "$virtual_env_path"
+    # python3 -m venv --system-site-packages "$virtual_env_path"
+    python3 -m venv "$virtual_env_path"
     activate_venv 
 
     printf "Created virtual environment %s\n" "$env_path"
@@ -118,7 +122,7 @@ function rcmode(){
     export IPYTHONDIR=$application_data/local/ipython
     export MPLCONFIGDIR=$application_data/local/mpl
     export MPLBACKEND="Agg"
-    #export LD_LIBRARY_PATH=/opt/conda/lib/:$LD_LIBRARY_PATH
+    export LD_LIBRARY_PATH=/opt/conda/lib/:$LD_LIBRARY_PATH
 
     #export POETRY_HOME=/srv/.local/poetry
     #if [[ ! -d $POETRY_HOME ]]; then

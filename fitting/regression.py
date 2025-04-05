@@ -37,6 +37,8 @@ class TrainedModel:
     transform: torch.Tensor
     metadata: dict
 
+    training_progress: dict
+
     learned_noise: bool = False
 
 
@@ -73,6 +75,7 @@ def loadModel(trained_model, other_data=None):
         learn_additional_noise=trained_model.learned_noise,
         noise_constraint=gpytorch.constraints.GreaterThan(1e-10),
     )
+    # likelihood = gpytorch.likelihoods.GaussianLikelihood()
     model = model_class(
         normalized_blinded_data.X, normalized_blinded_data.Y, likelihood
     )
@@ -82,7 +85,7 @@ def loadModel(trained_model, other_data=None):
     return model
 
 
-def getPosteriorProcess(model, data, transform):
+def getPosteriorProcess(model, data, transform, extra_noise=None):
     normalized_data = transform.transform(data)
     pred_dist = computePosterior(
         model,
@@ -91,6 +94,16 @@ def getPosteriorProcess(model, data, transform):
         slope=transform.transform_y.slope,
         intercept=transform.transform_y.intercept,
     )
+    logger.info(pred_dist.variance)
+    logger.info(f"Extra noise is {extra_noise}")
+    if extra_noise is not None:
+        en = transform.transform_y.iTransformVariances(extra_noise)
+        new_cov = torch.diag(torch.ones(pred_dist.variance.size(0)) * en).detach()
+        to_add = gpytorch.distributions.MultivariateNormal(
+            torch.zeros_like(pred_dist.mean).detach(), new_cov
+        )
+        pred_dist += to_add
+    logger.info(pred_dist.variance)
     return pred_dist
 
 
@@ -115,6 +128,22 @@ class DataValues:
     def fromGpu(self):
         return DataValues(
             self.X.cpu(), self.Y.cpu(), self.V.cpu(), tuple(x.cpu() for x in self.E)
+        )
+
+    def numpy(self):
+        return DataValues(
+            self.X.numpy(),
+            self.Y.numpy(),
+            self.V.numpy(),
+            tuple(x.numpy() for x in self.E),
+        )
+
+    def torch(self):
+        return DataValues(
+            torch.from_numpy(self.X),
+            torch.from_numpy(self.Y),
+            torch.from_numpy(self.V),
+            tuple(torch.from_numpy(x) for x in self.E),
         )
 
     @property
@@ -157,9 +186,29 @@ def optimizeHyperparams(
         f"Optimizing {sum(torch.numel(x) for x in model.parameters())} hyperparameters on {len(train_data.Y)} data points"
     )
 
+    # optimizer = torch.optim.Adam(
+    #     [
+    #         {
+    #             "params": [
+    #                 v for k, v in model.named_parameters() if "outscale" not in k
+    #             ],
+    #             "lr": lr * 50,
+    #         },
+    #         {"params": [v for k, v in model.named_parameters() if "outscale" in k]},
+    #     ],
+    #     lr=lr,
+    # )
+
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
     mll = gpytorch.mlls.ExactMarginalLogLikelihood(likelihood, model)
     evidence = None
+
+    training_progress = {
+        "loss": [],
+        "chi2_unblind": [],
+        "chi2_blind": [],
+        "parameters": [],
+    }
 
     with linear_operator.settings.max_cg_iterations(10000):
         for i in range(iterations):
@@ -170,13 +219,26 @@ def optimizeHyperparams(
             optimizer.step()
             # scheduler.step()
             # slr = scheduler.get_last_lr()[0]
+            if validate_function is not None and False:
+                c2u, c2b = validate_function(model)
+                training_progress["chi2_unblind"].append(c2u.detach())
+                training_progress["chi2_blind"].append(c2b.detach())
             if (i % (iterations // 20) == 0) or i == iterations - 1:
                 logger.info(f"Iter {i} (lr={lr:0.4f}): Loss={round(loss.item(),4)}")
-                if validate_function is not None:
-                    validate_function(model)
+                # for n, k in model.named_parameters():
+                #     logger.info(f"{n}: {k}")
+                c2u, c2b = validate_function(model)
             torch.cuda.empty_cache()
+            training_progress["loss"].append(loss.detach())
+            training_progress["parameters"].append(
+                dict((x, y.detach()) for x, y in model.named_parameters())
+            )
 
-    return model, likelihood, loss
+    # for n, k in model.named_parameters():
+    #     print(f"{n}: {k}")
+    # print(model.likelihood.noise)
+
+    return model, likelihood, loss, training_progress
 
 
 def optimizeHyperparamsVar(
@@ -273,6 +335,7 @@ def doCompleteRegression(
     all_data = DataValues.fromHistogram(histogram)
     domain_mask = domain_blinder(all_data.X, all_data.Y)
 
+
     test_data = all_data[domain_mask]
     if window_blinder is not None:
         window_mask = window_blinder(test_data.X)
@@ -299,7 +362,7 @@ def doCompleteRegression(
 
     # logger.info(train.Y)
     # logger.info(train.V)
-    # logger.info(f"Learn additional noise is: {learn_noise}")
+    logger.info(f"Learn additional noise is: {learn_noise}")
     likelihood = gpytorch.likelihoods.FixedNoiseGaussianLikelihood(
         noise=train.V,
         learn_additional_noise=learn_noise,
@@ -319,7 +382,9 @@ def doCompleteRegression(
     if validate_function is not None:
 
         def vf(model):
-            validate_function(model, train, norm_test, window_mask)
+            return validate_function(
+                model, train, norm_test, window_mask, train_transform
+            )
 
     else:
         vf = None
@@ -329,7 +394,7 @@ def doCompleteRegression(
             model, likelihood, train, iterations=iterations, lr=lr, validate_function=vf
         )
     else:
-        model, likelihood, evidence = optimizeHyperparams(
+        model, likelihood, evidence, training_progress = optimizeHyperparams(
             model, likelihood, train, iterations=iterations, lr=lr, validate_function=vf
         )
 
@@ -354,6 +419,7 @@ def doCompleteRegression(
         domain_mask=domain_mask,
         blind_mask=window_mask,
         transform=train_transform,
+        training_progress=training_progress,
         metadata={},
         learned_noise=learn_noise,
     )

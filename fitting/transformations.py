@@ -58,10 +58,10 @@ class AnscombeTransform:
         self.intercept = torch.atleast_1d(intercept)
 
     def transformData(self, y):
-        return ((2 * torch.sqrt(y + 3 / 8)) - self.intercept) / self.slope
+        return 2 * torch.sqrt(y + 3 / 8)
 
     def iTransformData(self, y):
-        return (((y * self.slope) + self.intercept) / 2) ** 2 - 3 / 8
+        return (y / 2) ** 2 - 3 / 8
 
     def transformVariances(self, v):
         return v

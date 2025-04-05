@@ -2,6 +2,8 @@ import argparse
 import logging
 import pickle as pkl
 from pathlib import Path
+
+
 from .diagnostics import plotDiagnostics
 
 from .regression import DataValues
@@ -30,18 +32,29 @@ def saveDiagnosticPlots(plots, save_dir):
         plt.close(fig)
 
 
-def validate(model, train, test, window_mask):
+def validate(model, train, test, window_mask, train_transform):
     import torch
+
+    train_transform = train_transform.toCuda()
 
     model.eval()
     post_reg = model(test.X).mean
-    chi2_blind_post_raw = chi2Bins(post_reg, test.Y, test.V, mask=window_mask)
-    chi2_post_raw = chi2Bins(post_reg, test.Y, test.V, mask=~window_mask)
+    real_y = test.Y
+    real_v = test.V
+
+    # post_reg = train_transform.transform_y.iTransformData(model(test.X).mean)
+    # real = train_transform.transform_y.iTransformData(test.Y)
+    chi2_blind_post_raw = chi2Bins(post_reg, real_y, real_v, mask=window_mask)
+    chi2_post_raw = chi2Bins(post_reg, real_y, real_v, mask=~window_mask)
     logger.info(
         f"Validate Chi2 (seen={chi2_post_raw:0.3f}) (blind={chi2_blind_post_raw:0.3f})"
     )
 
     model.train()
+    return (
+        chi2_post_raw.detach(),
+        chi2_blind_post_raw.detach(),
+    )
 
 
 def regress(
@@ -207,7 +220,7 @@ def estimateSingle2D(
             trained_model = regress(
                 to_estimate,
                 base_dir,
-                min_counts=20,
+                min_counts=50,
                 window=window,
                 use_cuda=True,
                 iterations=iterations,

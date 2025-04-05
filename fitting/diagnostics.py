@@ -19,7 +19,10 @@ def plotDiagnostics(save_dir, trained_model, **kwargs):
     _, coupling, mt, mx = trained_model.metadata["signal_name"].split("_")
     mt, mx = float(mt), float(mx)
     all_data, train_mask = regression.getModelingData(trained_model)
-    pred_dist = regression.getPosteriorProcess(model, all_data, trained_model.transform)
+    pred_dist = regression.getPosteriorProcess(
+        model, all_data, trained_model.transform,
+        # extra_noise=model.likelihood.second_noise
+    )
 
     pred_data = DataValues(all_data.X, pred_dist.mean, pred_dist.variance, all_data.E)
 
