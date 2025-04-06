@@ -366,7 +366,7 @@ def doCompleteRegression(
     likelihood = gpytorch.likelihoods.FixedNoiseGaussianLikelihood(
         noise=train.V,
         learn_additional_noise=learn_noise,
-        noise_constraint=gpytorch.constraints.GreaterThan(1e-10),
+        noise_constraint=gpytorch.constraints.GreaterThan(1e-4),
     )
 
     # likelihood = gpytorch.likelihoods.GaussianLikelihood()

@@ -100,6 +100,8 @@ class LargeFeatureExtractor(torch.nn.Sequential):
             p = layer_sizes[i - 1] if i > 0 else idim
             self.add_module(f"linear{i}", torch.nn.Linear(p, layer_sizes[i]))
             self.add_module(f"relu{i}", torch.nn.ReLU())
+            # if i == 1:
+            #     self.add_module(f"dropout{i}", torch.nn.Dropout(p=0.2))
         self.add_module(
             f"linear{len(layer_sizes)}", torch.nn.Linear(layer_sizes[-1], odim)
         )
@@ -244,7 +246,7 @@ class NonStatParametric2D(gpytorch.models.ExactGP):
 
 
 class MyNNRBFModel2D(gpytorch.models.ExactGP):
-    def __init__(self, train_x, train_y, likelihood, inducing_ratio=1):
+    def __init__(self, train_x, train_y, likelihood, inducing_ratio=2):
         super().__init__(train_x, train_y, likelihood)
         self.inducing_ratio = inducing_ratio
         ind = train_x[:: self.inducing_ratio].clone()
@@ -258,22 +260,15 @@ class MyNNRBFModel2D(gpytorch.models.ExactGP):
         #     gpytorch.kernels.RBFKernel(ard_num_dims=2)
         # )
 
-        base_covar_module = SK(
-            # gpytorch.kernels.RBFKernel(ard_num_dims=2)
-            # WrapLinear(gpytorch.kernels.RBFKernel(ard_num_dims=2))
-            # NNRBFKernel(idim=2, odim=2, layer_sizes=(16, 8))
-            # NNMaternKernel(idim=2, odim=2, layer_sizes=(8, 6, 4))
-            NNRBFKernel(idim=2, odim=2, layer_sizes=(5,5,5))
-            # NNRBFKernel(idim=2, odim=2, layer_sizes=(8, 6))
+        base_covar_module = SK(gpytorch.kernels.RBFKernel(ard_num_dims=2)) + SK(
+            NNRBFKernel(idim=2, odim=2, layer_sizes=(5, 5, 5))
         )
 
         # base_covar_module = SK(gpytorch.kernels.RBFKernel(ard_num_dims=2)) + SK(
         #     gpytorch.kernels.MaternKernel(ard_num_dims=2, mu=2.5)
         # )
 
-        # base_covar_module = SK(gpytorch.kernels.RBFKernel(ard_num_dims=2)) + SK(
-        #     NNMaternKernel(idim=2, odim=2, layer_sizes=(8, 4))
-        # )
+        # base_covar_module = SK(gpytorch.kernels.RBFKernel(ard_num_dims=2))
 
         # base_covar_module = SK(NNRBFKernel(idim=2, odim=2, layer_sizes=(8, 4)))
 
@@ -291,13 +286,13 @@ class MyNNRBFModel2D(gpytorch.models.ExactGP):
 
         print("HERE")
 
-        self.covar_module = gpytorch.kernels.InducingPointKernel(
-            base_covar_module,
-            likelihood=likelihood,
-            inducing_points=ind,
-        )
+        # self.covar_module = gpytorch.kernels.InducingPointKernel(
+        #     base_covar_module,
+        #     likelihood=likelihood,
+        #     inducing_points=ind,
+        # )
 
-        # self.covar_module = base_covar_module
+        self.covar_module = base_covar_module
 
         # self.covar_module.inducing_points.requires_grad = False
         # gs = gpytorch.utils.grid.choose_grid_size(train_x, 0.25)
