@@ -75,10 +75,23 @@ def loadModel(trained_model, other_data=None):
         learn_additional_noise=trained_model.learned_noise,
         noise_constraint=gpytorch.constraints.GreaterThan(1e-10),
     )
-    # likelihood = gpytorch.likelihoods.GaussianLikelihood()
-    model = model_class(
-        normalized_blinded_data.X, normalized_blinded_data.Y, likelihood
-    )
+
+    inducing = model_state.get("covar_module.inducing_points")
+    if inducing is not None:
+        print(inducing.size(0))
+        model = model_class(
+            normalized_blinded_data.X,
+            normalized_blinded_data.Y,
+            likelihood,
+            inducing_ratio=None,
+            num_inducing=inducing.size(0),
+        )
+
+    else:
+        model = model_class(
+            normalized_blinded_data.X, normalized_blinded_data.Y, likelihood
+        )
+
     model.load_state_dict(model_state)
 
     model.eval()
@@ -316,6 +329,7 @@ def updateModelNewData(
         transform=train_transform,
         metadata={},
         learned_noise=learn_noise,
+        training_progress=None,
     )
     return trained_model
 
@@ -334,7 +348,6 @@ def doCompleteRegression(
 
     all_data = DataValues.fromHistogram(histogram)
     domain_mask = domain_blinder(all_data.X, all_data.Y)
-
 
     test_data = all_data[domain_mask]
     if window_blinder is not None:

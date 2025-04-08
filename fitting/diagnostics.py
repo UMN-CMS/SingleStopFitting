@@ -20,7 +20,9 @@ def plotDiagnostics(save_dir, trained_model, **kwargs):
     mt, mx = float(mt), float(mx)
     all_data, train_mask = regression.getModelingData(trained_model)
     pred_dist = regression.getPosteriorProcess(
-        model, all_data, trained_model.transform,
+        model,
+        all_data,
+        trained_model.transform,
         # extra_noise=model.likelihood.second_noise
     )
 
@@ -66,6 +68,8 @@ def plotDiagnostics(save_dir, trained_model, **kwargs):
         mask=train_mask,
         **kwargs,
     )
+
+    saveFunc("chi2_info", data)
 
     makePosteriorPred(pred_dist, all_data, saveFunc, train_mask)
     for point in [[mt, mx / mt]]:
@@ -142,7 +146,7 @@ def main(args):
     mplhep.style.use("CMS")
 
     out = args.outdir or Path(args.input).parent
-    m = torch.load(args.input)
+    m = torch.load(args.input,  weights_only=False )
     plotDiagnostics(out, m)
 
 
@@ -150,7 +154,7 @@ def runEigens(args):
     import torch
 
     out = args.outdir or Path(args.input).parent
-    m = torch.load(args.input)
+    m = torch.load(args.input,  weights_only=False )
     plotEigenvars(out, m, args.min_frac)
 
 
@@ -158,7 +162,7 @@ def runCovars(args):
     import torch
 
     out = args.outdir or Path(args.input).parent
-    m = torch.load(args.input)
+    m = torch.load(args.input,  weights_only=False )
     plotCovarsForPoints(out, m, args.points)
 
 

@@ -77,9 +77,7 @@ def createDatacard(obs, pred, signal_data, output_dir, signal_meta=None):
     )
     card.addShape(sig, b1, "histograms.root", "signal", "")
 
-    card.addObservation(
-        b1, "histograms.root", "data_obs", int(torch.sum(obs.Y))
-    )
+    card.addObservation(b1, "histograms.root", "data_obs", int(torch.sum(obs.Y)))
 
     for i in range(0, nz):
         s = Systematic(f"EVAR_{i}", "shape")
@@ -89,10 +87,11 @@ def createDatacard(obs, pred, signal_data, output_dir, signal_meta=None):
     with open(output_dir / "datacard.txt", "w") as f:
         f.write(card.dumps())
 
-    metadata = {"signal_metadata" : signal_meta }
+    metadata = {"signal_metadata": signal_meta}
 
-    with open(output_dir / "metadata.json", 'w') as f:
+    with open(output_dir / "metadata.json", "w") as f:
         f.write(json.dumps(metadata))
+
 
 def main(args):
     for data_path in args.inputs:
@@ -102,31 +101,41 @@ def main(args):
         print(signal_name)
         relative = parent.relative_to(Path("."))
         if args.base:
-            relative=relative.relative_to(Path(args.base))
+            relative = relative.relative_to(Path(args.base))
         signal_data_path = parent.parent / "signal_data.pth"
-        sig_data = torch.load(signal_data_path)  # , weights_only=True)
-        bkg_data = torch.load(p)
+        sig_data = torch.load(
+            signal_data_path, weights_only=False
+        )  # , weights_only=True)
+        bkg_data = torch.load(p, weights_only=False)
         model = loadModel(bkg_data)
         obs, mask = getModelingData(bkg_data)
         blinded = obs.getMasked(mask)
         pred = getPosteriorProcess(model, obs, bkg_data.transform)
-        _, coupling ,mt, mx = signal_name.split("_")
-        mt,mx = int(mt), int(mx)
-        signal_metadata = dict(name=signal_name, coupling=coupling, mass_stop = mt, mass_chargino=mx, rate=bkg_data.metadata["signal_injected"])
+        _, coupling, mt, mx = signal_name.split("_")
+        mt, mx = int(mt), int(mx)
+        signal_metadata = dict(
+            name=signal_name,
+            coupling=coupling,
+            mass_stop=mt,
+            mass_chargino=mx,
+            rate=bkg_data.metadata["signal_injected"],
+        )
         (args.output / relative).mkdir(exist_ok=True, parents=True)
-        createDatacard(obs, pred, sig_data["signal_data"], args.output / relative, signal_meta=signal_metadata) 
-
+        createDatacard(
+            obs,
+            pred,
+            sig_data["signal_data"],
+            args.output / relative,
+            signal_meta=signal_metadata,
+        )
 
 
 def addDatacardGenerateParser(parser):
-    parser.add_argument('--output')
-    parser.add_argument('--base')
-    parser.add_argument('inputs',nargs="+" )
+    parser.add_argument("--output")
+    parser.add_argument("--base")
+    parser.add_argument("inputs", nargs="+")
     parser.set_defaults(func=main)
 
-
-
-    
 
 if __name__ == "__main__":
     main()

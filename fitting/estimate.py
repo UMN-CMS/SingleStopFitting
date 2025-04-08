@@ -35,7 +35,6 @@ def saveDiagnosticPlots(plots, save_dir):
 def validate(model, train, test, window_mask, train_transform):
     import torch
 
-    train_transform = train_transform.toCuda()
 
     model.eval()
     post_reg = model(test.X).mean
@@ -220,7 +219,7 @@ def estimateSingle2D(
             trained_model = regress(
                 to_estimate,
                 base_dir,
-                min_counts=50,
+                min_counts=10,
                 window=window,
                 use_cuda=True,
                 iterations=iterations,
@@ -242,7 +241,7 @@ def main(args):
 
     other_model = None
     if args.use_other_model:
-        other_model_data = torch.load(args.use_other_model)
+        other_model_data = torch.load(args.use_other_model, weights_only=False)
         other_model = regression.loadModel(other_model_data)
 
     estimateSingle2D(
