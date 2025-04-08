@@ -1,4 +1,5 @@
 from pathlib import Path
+import logging
 from fitting.utils import getScaledEigenvecs
 import gpytorch
 
@@ -14,21 +15,30 @@ from .predictive import makePosteriorPred, makePValuePlots
 from .utils import chi2Bins
 
 
+logger = logging.getLogger(__name__)
+
+
 def plotDiagnostics(save_dir, trained_model, **kwargs):
     model = regression.loadModel(trained_model)
     _, coupling, mt, mx = trained_model.metadata["signal_name"].split("_")
     mt, mx = float(mt), float(mx)
-    all_data, train_mask = regression.getModelingData(trained_model)
+    all_data, blind_mask, train_mask = regression.getModelingData(trained_model)
+    logger.info(f"Extra noise is {getattr(model.likelihood, 'second_noise')}")
     pred_dist = regression.getPosteriorProcess(
-        model, all_data, trained_model.transform,
-        # extra_noise=model.likelihood.second_noise
+        model,
+        all_data,
+        trained_model.transform,
+        extra_noise=getattr(model.likelihood, "second_noise"),
     )
 
     pred_data = DataValues(all_data.X, pred_dist.mean, pred_dist.variance, all_data.E)
 
     mask = all_data.V > 0
-    global_chi2_bins = chi2Bins(pred_data.Y, all_data.Y, all_data.V, mask & ~train_mask)
-    blinded_chi2_bins = chi2Bins(all_data.Y, pred_data.Y, all_data.V, train_mask & mask)
+    global_chi2_bins = chi2Bins(pred_data.Y, all_data.Y, all_data.V, mask & train_mask)
+    blinded_chi2_bins = chi2Bins(all_data.Y, pred_data.Y, all_data.V, blind_mask & mask)
+    validation_chi2_bins = chi2Bins(
+        all_data.Y, pred_data.Y, all_data.V, train_mask & ~blind_mask & mask
+    )
 
     # final_nlpd = gpytorch.metrics.negative_log_predictive_density(pred_dist, test_y)
 
@@ -37,9 +47,11 @@ def plotDiagnostics(save_dir, trained_model, **kwargs):
 
     print(f"Global Chi2/bins = {global_chi2_bins}")
     print(f"Blinded Chi2/bins = {blinded_chi2_bins}")
+    print(f"Validate Chi2/bins = {validation_chi2_bins}")
     data = {
         "global_chi2/bins": float(global_chi2_bins),
         "blinded_chi2/bins": float(global_chi2_bins),
+        "validate_chi2/bins": float(validation_chi2_bins),
     }
 
     save_dir = Path(save_dir)
@@ -58,19 +70,28 @@ def plotDiagnostics(save_dir, trained_model, **kwargs):
             obj.savefig((save_dir / name).with_suffix(f".{ext}"))
             plt.close(obj)
 
+    print(trained_model.validation_masks)
     diagnostic_plots = makeDiagnosticPlots(
         pred_data,
         all_data,
         all_data.getMasked(~train_mask),
         saveFunc,
         mask=train_mask,
+        validation_masks=trained_model.validation_masks,
         **kwargs,
     )
 
     makePosteriorPred(pred_dist, all_data, saveFunc, train_mask)
-    for point in [[mt, mx / mt]]:
+    ratio = mx / mt
+
+    blind_locs = all_data.X[~train_mask][::3]
+
+    for point in blind_locs:
         makeCovariancePlots(model, trained_model.transform, all_data, point, saveFunc)
-    makePValuePlots(pred_dist, all_data, train_mask, saveFunc)
+    try:
+        makePValuePlots(pred_dist, all_data, train_mask, saveFunc)
+    except Exception as e:
+        logger.error(e)
 
 
 def plotCovarsForPoints(save_dir, trained_model, points):

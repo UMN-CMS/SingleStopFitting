@@ -4,6 +4,9 @@ import fitting.regression as regression
 import torch
 
 
+torch.set_default_dtype(torch.float64)
+
+
 class LinearTransform:
     def __init__(self, slope, intercept=None):
         self.slope = torch.atleast_1d(slope)

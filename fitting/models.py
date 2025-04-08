@@ -246,11 +246,25 @@ class NonStatParametric2D(gpytorch.models.ExactGP):
 
 
 class MyNNRBFModel2D(gpytorch.models.ExactGP):
-    def __init__(self, train_x, train_y, likelihood, inducing_ratio=2):
+    def __init__(
+        self, train_x, train_y, likelihood, inducing_ratio=2, num_inducing=None
+    ):
+        if num_inducing and inducing_ratio:
+            raise RuntimeError("Cannot have both num inducing and inducing ratio")
+
         super().__init__(train_x, train_y, likelihood)
-        self.inducing_ratio = inducing_ratio
-        ind = train_x[:: self.inducing_ratio].clone()
-        # ind.requires_grad = False
+        print(num_inducing)
+        if inducing_ratio:
+            self.inducing_ratio = inducing_ratio
+            ind = train_x[:: self.inducing_ratio].clone()
+            self.num_inducing = ind.size(0)
+        else:
+            self.inducing_ratio = None
+            self.num_inducing = num_inducing
+            ind = train_x[:num_inducing].clone()
+
+        print(len(ind))
+
         self.mean_module = gpytorch.means.ConstantMean()
 
         # self.base_covar_module = gpytorch.kernels.ScaleKernel(
@@ -259,10 +273,6 @@ class MyNNRBFModel2D(gpytorch.models.ExactGP):
         # base_covar_module = SK(NNMaternKernel(idim=2, odim=2, layer_sizes=(8, 4))) + SK(
         #     gpytorch.kernels.RBFKernel(ard_num_dims=2)
         # )
-
-        base_covar_module = SK(gpytorch.kernels.RBFKernel(ard_num_dims=2)) + SK(
-            NNRBFKernel(idim=2, odim=2, layer_sizes=(5, 5, 5))
-        )
 
         # base_covar_module = SK(gpytorch.kernels.RBFKernel(ard_num_dims=2)) + SK(
         #     gpytorch.kernels.MaternKernel(ard_num_dims=2, mu=2.5)
@@ -284,21 +294,37 @@ class MyNNRBFModel2D(gpytorch.models.ExactGP):
         # )
         # self.scale_to_bounds = gpytorch.utils.grid.ScaleToBounds(-1.0, 1.0)
 
-        print("HERE")
+        # ind.requires_grad = False
 
-        # self.covar_module = gpytorch.kernels.InducingPointKernel(
-        #     base_covar_module,
-        #     likelihood=likelihood,
-        #     inducing_points=ind,
-        # )
+        base_covar_module = SK(
+            gpytorch.kernels.RBFKernel(ard_num_dims=2),
+            # outputscale_constraint=gpytorch.constraints.Interval(0.4, 0.6),
+        ) + SK(
+            NNRBFKernel(idim=2, odim=2, layer_sizes=(32, 16)),
+            # outputscale_constraint=gpytorch.constraints.Interval(0.01, 0.1),
+            # outputscale_constraint=gpytorch.constraints.Interval(0.4, 0.6),
+            # outputscale_prior=gpytorch.priors.SmoothedBoxPrior(0.001, 0.5)
+        )
+        base_covar_module = SK(NNRBFKernel(idim=2, odim=2, layer_sizes=(8, 4)))
 
-        self.covar_module = base_covar_module
+        # base_covar_module = SK(
+        #     gpytorch.kernels.RBFKernel(ard_num_dims=2),
+        # ) + SK(WrapLinear(gpytorch.kernels.RBFKernel(ard_num_dims=2)))
+        # base_covar_module = SK(NNRBFKernel(idim=2, odim=2, layer_sizes=(32, 16)))
+
+        self.covar_module = gpytorch.kernels.InducingPointKernel(
+            base_covar_module,
+            likelihood=likelihood,
+            inducing_points=ind,
+        )
+
+        # self.covar_module = base_covar_module
 
         # self.covar_module.inducing_points.requires_grad = False
-        # gs = gpytorch.utils.grid.choose_grid_size(train_x, 0.25)
+        # gs = gpytorch.utils.grid.choose_grid_size(train_x, 1 / inducing_ratio)
         # logger.info(f"Grid size is {gs}")
         # self.covar_module = gpytorch.kernels.GridInterpolationKernel(
-        #     gpytorch.kernels.ScaleKernel(gpytorch.kernels.RBFKernel(ard_num_dims=2)),
+        #     base_covar_module,
         #     num_dims=2,
         #     grid_size=gs,
         # )

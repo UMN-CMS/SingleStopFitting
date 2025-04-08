@@ -104,8 +104,8 @@ def main(args):
         if args.base:
             relative=relative.relative_to(Path(args.base))
         signal_data_path = parent.parent / "signal_data.pth"
-        sig_data = torch.load(signal_data_path)  # , weights_only=True)
-        bkg_data = torch.load(p)
+        sig_data = torch.load(signal_data_path, weights_only=False)  # , weights_only=True)
+        bkg_data = torch.load(p, weights_only=False)
         model = loadModel(bkg_data)
         obs, mask = getModelingData(bkg_data)
         blinded = obs.getMasked(mask)

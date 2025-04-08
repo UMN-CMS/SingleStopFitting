@@ -32,10 +32,18 @@ def saveDiagnosticPlots(plots, save_dir):
         plt.close(fig)
 
 
-def validate(model, train, test, window_mask, train_transform):
+def validate(
+    model,
+    train,
+    test,
+    train_mask,
+    blind_mask,
+    train_transform,
+    extra_validation_masks=None,
+):
     import torch
 
-    train_transform = train_transform.toCuda()
+    # train_transform = train_transform.toCuda()
 
     model.eval()
     post_reg = model(test.X).mean
@@ -44,11 +52,21 @@ def validate(model, train, test, window_mask, train_transform):
 
     # post_reg = train_transform.transform_y.iTransformData(model(test.X).mean)
     # real = train_transform.transform_y.iTransformData(test.Y)
-    chi2_blind_post_raw = chi2Bins(post_reg, real_y, real_v, mask=window_mask)
-    chi2_post_raw = chi2Bins(post_reg, real_y, real_v, mask=~window_mask)
+    chi2_blind_post_raw = chi2Bins(post_reg, real_y, real_v, mask=blind_mask)
+    chi2_post_raw = chi2Bins(post_reg, real_y, real_v, mask=train_mask)
     logger.info(
         f"Validate Chi2 (seen={chi2_post_raw:0.3f}) (blind={chi2_blind_post_raw:0.3f})"
     )
+    if extra_validation_masks:
+        chi2_vals_raw = [
+            chi2Bins(post_reg, real_y, real_v, mask=x & ~blind_mask)
+            for x in extra_validation_masks
+        ]
+        logger.info(
+            "Extra validation chi2 are: {}".format(
+                " ,".join(f"{x:0.2f}" for x in chi2_vals_raw)
+            )
+        )
 
     model.train()
     return (
@@ -66,6 +84,7 @@ def regress(
     use_cuda=False,
     window_spread=1.0,
     learning_rate=0.02,
+    validation_windows=None,
 ):
 
     base_save_dir = Path(base_save_dir)
@@ -85,6 +104,7 @@ def regress(
         learn_noise=False,
         lr=learning_rate,
         validate_function=validate,
+        validation_windows=validation_windows,
     )
     return trained_model
 
@@ -108,6 +128,7 @@ def estimateSingle2D(
     min_base_variance=None,
     use_other_model=None,
     use_other_kernel=None,
+    validation_spreads=None,
 ):
     signal_injections = signal_injections or [0.0, 1.0, 4.0, 16.0]
     base_dir = Path(base_dir)
@@ -175,6 +196,14 @@ def estimateSingle2D(
             window = GaussianWindow2D.fromData(
                 signal_regression_data, spread=window_spread
             )
+            validation_windows = []
+            if validation_spreads:
+                validation_windows = [
+                    GaussianWindow2D.fromData(signal_regression_data, spread=s)
+                    for s in validation_spreads
+                ]
+            print(validation_windows)
+
             # temp = signal_hist.copy(deep=True)
             # sd = regression.DataValues.fromHist(signal_hist)
             # smoothed = window.vals(sd.X)
@@ -220,11 +249,12 @@ def estimateSingle2D(
             trained_model = regress(
                 to_estimate,
                 base_dir,
-                min_counts=50,
+                min_counts=25,
                 window=window,
                 use_cuda=True,
                 iterations=iterations,
                 learning_rate=learning_rate,
+                validation_windows=validation_windows,
             )
         trained_model.metadata.update(
             {"signal_injected": r, "signal_name": signal_name}
@@ -242,7 +272,7 @@ def main(args):
 
     other_model = None
     if args.use_other_model:
-        other_model_data = torch.load(args.use_other_model)
+        other_model_data = torch.load(args.use_other_model, weights_only=False)
         other_model = regression.loadModel(other_model_data)
 
     estimateSingle2D(
@@ -257,6 +287,7 @@ def main(args):
         learning_rate=args.learning_rate,
         rebin_signal=args.rebin_signal,
         iterations=args.iterations,
+        validation_spreads=args.validation_spreads,
         rebin_background=args.rebin_background,
         blinding_signal=args.blind_signal,
         scale_background=args.scale_background,
@@ -292,6 +323,7 @@ def addToParser(parser):
     parser.add_argument("-i", "--iterations", type=int, default=100)
     parser.add_argument("--cuda", action="store_true", help="Use cuda", default=False)
     parser.add_argument("--spread", type=float, default=1.0)
+    parser.add_argument("--validation-spreads", type=float, nargs="*", default=[1.2])
     parser.add_argument("--use-other-model", type=str)
     parser.add_argument(
         "--blind-signal", default=True, action=argparse.BooleanOptionalAction

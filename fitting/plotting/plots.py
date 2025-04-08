@@ -43,15 +43,29 @@ def plotPullDists(pred, raw_test, save_func, mask=None):
     save_func("window_pulls_hist", fig)
 
 
-def makeDiagnosticPlots2D(pred, raw_test, raw_train, save_func, mask=None, **kwargs):
+def makeDiagnosticPlots2D(
+    pred, raw_test, raw_train, save_func, mask=None, validation_masks=None, **kwargs
+):
     if mask is not None and torch.any(mask):
         squares = makeSquares(raw_test.X[mask], raw_test.E)
         points = getPolyFromSquares(squares)
+
+    
+    validation_outlines = []
+    if validation_masks is not None:
+        for m in validation_masks:
+            squares = makeSquares(raw_test.X[m], raw_test.E)
+            points = getPolyFromSquares(squares)
+            validation_outlines.append(points)
 
     def addWindow(ax):
         if mask is not None and torch.any(mask):
             poly = Polygon(points, edgecolor="green", linewidth=3, fill=False)
             ax.add_patch(poly)
+        for p in validation_outlines:
+            poly = Polygon(p, edgecolor="yellow", linewidth=3, fill=False)
+            ax.add_patch(poly)
+
 
     pred_mean = pred.Y
     pred_variances = pred.V
@@ -145,7 +159,7 @@ def makeCovariancePlots(model, transform, data, point, save_func):
     f = plotRaw(ax, data.E, data.X, vals)
     ax.plot([point[0]], [point[1]], "o", color="red")
     print(point)
-    save_func(f"covariance_{'_'.join(map(str,point))}", fig)
+    save_func(f"covariance_{'_'.join(f'{x:0.3f}' for x in point)}", fig)
 
 
 def windowPlots2D(signal_data, window, save_func):

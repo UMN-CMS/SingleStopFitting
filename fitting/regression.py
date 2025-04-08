@@ -22,6 +22,7 @@ from . import transformations
 from .utils import dataToHist, computePosterior, chi2Bins
 
 logger = logging.getLogger(__name__)
+torch.set_default_dtype(torch.float64)
 
 
 @dataclass
@@ -32,7 +33,10 @@ class TrainedModel:
     input_data: hist.Hist
 
     domain_mask: torch.Tensor
+    training_mask: torch.Tensor
     blind_mask: torch.Tensor
+
+    validation_masks: list[torch.Tensor] | None
 
     transform: torch.Tensor
     metadata: dict
@@ -53,18 +57,20 @@ def getModelingData(trained_model, other_data=None):
 
     if trained_model.blind_mask is not None:
         bm = trained_model.blind_mask
+        tm = trained_model.training_mask
     else:
         bm = torch.zeros_like(all_data.Y, dtype=bool)
+        tm = torch.zeros_like(all_data.Y, dtype=bool)
 
-    return all_data, bm
+    return all_data, bm, tm
 
 
 def loadModel(trained_model, other_data=None):
     model_class = trained_model.model_class
     model_state = trained_model.model_state
 
-    all_data, bm = getModelingData(trained_model, other_data)
-    blinded_data = all_data.getMasked(~bm)
+    all_data, bm, tm = getModelingData(trained_model, other_data)
+    blinded_data = all_data.getMasked(tm)
 
     transform = trained_model.transform
     normalized_blinded_data = transform.transform(blinded_data)
@@ -76,12 +82,26 @@ def loadModel(trained_model, other_data=None):
         noise_constraint=gpytorch.constraints.GreaterThan(1e-10),
     )
     # likelihood = gpytorch.likelihoods.GaussianLikelihood()
-    model = model_class(
-        normalized_blinded_data.X, normalized_blinded_data.Y, likelihood
-    )
-    model.load_state_dict(model_state)
 
+    inducing = model_state.get("covar_module.inducing_points")
+    if inducing is not None:
+        print(inducing.size(0))
+        model = model_class(
+            normalized_blinded_data.X,
+            normalized_blinded_data.Y,
+            likelihood,
+            inducing_ratio=None,
+            num_inducing=inducing.size(0),
+        )
+
+    else:
+        model = model_class(
+            normalized_blinded_data.X, normalized_blinded_data.Y, likelihood
+        )
+
+    model.load_state_dict(model_state)
     model.eval()
+
     return model
 
 
@@ -96,7 +116,7 @@ def getPosteriorProcess(model, data, transform, extra_noise=None):
     )
     logger.info(pred_dist.variance)
     logger.info(f"Extra noise is {extra_noise}")
-    if extra_noise is not None:
+    if extra_noise is not None and extra_noise > 0.0:
         en = transform.transform_y.iTransformVariances(extra_noise)
         new_cov = torch.diag(torch.ones(pred_dist.variance.size(0)) * en).detach()
         to_add = gpytorch.distributions.MultivariateNormal(
@@ -201,6 +221,7 @@ def optimizeHyperparams(
 
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
     mll = gpytorch.mlls.ExactMarginalLogLikelihood(likelihood, model)
+    mll = gpytorch.mlls.LeaveOneOutPseudoLikelihood(likelihood, model)
     evidence = None
 
     training_progress = {
@@ -236,6 +257,12 @@ def optimizeHyperparams(
 
     # for n, k in model.named_parameters():
     #     print(f"{n}: {k}")
+
+    try:
+        print(model.covar_module.base_kernel.kernels[0].outputscale)
+        print(model.covar_module.base_kernel.kernels[1].outputscale)
+    except Exception as e:
+        pass
     # print(model.likelihood.noise)
 
     return model, likelihood, loss, training_progress
@@ -314,6 +341,7 @@ def updateModelNewData(
         domain_mask=domain_mask,
         blind_mask=window_mask,
         transform=train_transform,
+        training_progress=None,
         metadata={},
         learned_noise=learn_noise,
     )
@@ -330,19 +358,32 @@ def doCompleteRegression(
     lr=0.001,
     learn_noise=False,
     validate_function=None,
+    validation_windows=None,
 ):
 
     all_data = DataValues.fromHistogram(histogram)
     domain_mask = domain_blinder(all_data.X, all_data.Y)
-
 
     test_data = all_data[domain_mask]
     if window_blinder is not None:
         window_mask = window_blinder(test_data.X)
     else:
         window_mask = ~torch.ones_like(test_data.Y, dtype=bool)
+    validation_masks = None
+    print(window_blinder)
+    print(validation_windows)
 
-    train_data = test_data[~window_mask][::1]
+    logger.info(f"Using {len(validation_windows or [])} extra validation windows.")
+
+    if validation_windows:
+        validation_masks = [v(test_data.X) for v in validation_windows]
+        # window_mask = torch.any(torch.stack(validation_masks), dim=1) & window_mask
+
+    training_mask = ~window_mask & ~torch.any(
+        torch.stack(validation_masks, dim=1), dim=1
+    )
+
+    train_data = test_data[training_mask][::1]
     # print(torch.count_nonzero(domain_mask))
     # print(torch.count_nonzero(window_mask))
     # print(test_data.X.shape)
@@ -366,7 +407,8 @@ def doCompleteRegression(
     likelihood = gpytorch.likelihoods.FixedNoiseGaussianLikelihood(
         noise=train.V,
         learn_additional_noise=learn_noise,
-        noise_constraint=gpytorch.constraints.GreaterThan(1e-4),
+        noise_constraint=gpytorch.constraints.GreaterThan(1e-5),
+        # noise_prior=gpytorch.priors.SmoothedBoxPrior(1e-4, 1e-3, sigma=0.001)
     )
 
     # likelihood = gpytorch.likelihoods.GaussianLikelihood()
@@ -383,7 +425,13 @@ def doCompleteRegression(
 
         def vf(model):
             return validate_function(
-                model, train, norm_test, window_mask, train_transform
+                model,
+                train,
+                norm_test,
+                training_mask,
+                window_mask,
+                train_transform,
+                extra_validation_masks=validation_masks,
             )
 
     else:
@@ -418,9 +466,11 @@ def doCompleteRegression(
         input_data=histogram,
         domain_mask=domain_mask,
         blind_mask=window_mask,
+        training_mask=training_mask,
         transform=train_transform,
         training_progress=training_progress,
         metadata={},
         learned_noise=learn_noise,
+        validation_masks=validation_masks,
     )
     return trained_model
