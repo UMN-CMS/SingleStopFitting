@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+
+output_dir=$1
+
+shopt -s globstar
+
+python3 -m fitting.combine.plot_rate -o $output_dir/rate_comp_r0.png gathered/2025_04_09/comp/rate_0p0.json
+python3 -m fitting.combine.plot_rate -o $output_dir/rate_comp_r1.png gathered/2025_04_09/comp/rate_1p0.json
+python3 -m fitting.combine.plot_rate -o $output_dir/rate_comp_r4.png gathered/2025_04_09/comp/rate_4p0.json
+python3 -m fitting.combine.plot_rate -o $output_dir/rate_comp_r16.png gathered/2025_04_09/comp/rate_16p0.json
+
+python3 -m fitting.combine.plot_rate -o $output_dir/rate_uncomp_r0.png gathered/2025_04_09/uncomp/rate_0p0.json
+python3 -m fitting.combine.plot_rate -o $output_dir/rate_uncomp_r1.png gathered/2025_04_09/uncomp/rate_1p0.json
+python3 -m fitting.combine.plot_rate -o $output_dir/rate_uncomp_r4.png gathered/2025_04_09/uncomp/rate_4p0.json
+python3 -m fitting.combine.plot_rate -o $output_dir/rate_uncomp_r16.png gathered/2025_04_09/uncomp/rate_16p0.json

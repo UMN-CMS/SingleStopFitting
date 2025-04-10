@@ -54,7 +54,7 @@ def createDatacard(obs, pred, signal_data, output_dir, signal_meta=None):
     root_path = output_dir / "histograms.root"
     root_file = uproot.recreate(root_path)
 
-    nz = createHists(obs, pred, signal_data, root_file, 0.01)
+    nz = createHists(obs, pred, signal_data, root_file, 0.05)
 
     card = DataCard()
 
@@ -67,7 +67,7 @@ def createDatacard(obs, pred, signal_data, output_dir, signal_meta=None):
 
     card.setProcessRate(sig, b1, -1)
     card.setProcessRate(bkg, b1, -1)
-
+http://cms-analysis.github.io/HiggsAnalysis-CombinedLimit/part3/nonstandard/#nuisance-parameter-impacts
     card.addShape(
         bkg,
         b1,

@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+
+input_dir=$1
+output_dir=$2
+
+shopt -s globstar
+
+python3 fitting/combine/gather.py --favor '/uncomp' -o $output_dir/uncomp/rate_0p0.json $input_dir/**/*0p0*/higgsCombine.fit.MultiDimFit.mH120.root
+python3 fitting/combine/gather.py --favor '/uncomp' -o $output_dir/uncomp/rate_1p0.json $input_dir/**/*1p0*/higgsCombine.fit.MultiDimFit.mH120.root
+python3 fitting/combine/gather.py --favor '/uncomp' -o $output_dir/uncomp/rate_4p0.json $input_dir/**/*4p0*/higgsCombine.fit.MultiDimFit.mH120.root
+python3 fitting/combine/gather.py --favor '/uncomp' -o $output_dir/uncomp/rate_16p0.json $input_dir/**/*16p0*/higgsCombine.fit.MultiDimFit.mH120.root
+
+python3 fitting/combine/gather.py --favor '/comp' -o $output_dir/comp/rate_0p0.json $input_dir/**/*0p0*/higgsCombine.fit.MultiDimFit.mH120.root
+python3 fitting/combine/gather.py --favor '/comp' -o $output_dir/comp/rate_1p0.json $input_dir/**/*1p0*/higgsCombine.fit.MultiDimFit.mH120.root
+python3 fitting/combine/gather.py --favor '/comp' -o $output_dir/comp/rate_4p0.json $input_dir/**/*4p0*/higgsCombine.fit.MultiDimFit.mH120.root
+python3 fitting/combine/gather.py --favor '/comp' -o $output_dir/comp/rate_16p0.json $input_dir/**/*16p0*/higgsCombine.fit.MultiDimFit.mH120.root

@@ -1,4 +1,5 @@
 import argparse
+import sys
 from rich import print
 import json
 from pathlib import Path
@@ -39,7 +40,7 @@ def getBestFile(signal_files, pat):
 
 def parseArguments():
     parser = argparse.ArgumentParser(description="")
-    parser.add_argument("-o", "--output")
+    parser.add_argument("-o", "--output", default="-")
     parser.add_argument(
         "-f", "--favor", type=str, help="Factor signals matching pattern"
     )
@@ -51,10 +52,14 @@ def main():
     args = parseArguments()
     file_groups = groupFiles(args.inputs)
     files = getBestFile(file_groups, args.favor)
-    for s,p in files.items():
-        ep = extractProperty(p,"r")
-        print(p,ep)
-
+    res = [{"signal": s, "props": extractProperty(p, "r")} for s, p in files.items()]
+    if args.output == "-":
+        json.dump(res, sys.stdout, indent=2)
+    else:
+        out_path = Path(args.output)
+        out_path.parent.mkdir(exist_ok=True, parents=True)
+        with open(out_path, "w") as f:
+            json.dump(res, f, indent=2)
 
 
 if __name__ == "__main__":

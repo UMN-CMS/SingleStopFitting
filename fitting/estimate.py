@@ -35,7 +35,6 @@ def saveDiagnosticPlots(plots, save_dir):
 def validate(model, train, test, window_mask, train_transform):
     import torch
 
-
     model.eval()
     post_reg = model(test.X).mean
     real_y = test.Y
@@ -88,102 +87,25 @@ def regress(
     return trained_model
 
 
-def estimateSingle2D(
-    background_path,
-    signal_path,
+def estimateSingle2DWithWindow(
     signal_name,
-    signal_selection,
-    background_name,
+    signal_hist,
+    bkg_hist,
+    window,
     base_dir,
-    window_spread=1.0,
     blinding_signal=True,
     use_cuda=False,
     iterations=100,
     signal_injections=None,
     learning_rate=0.02,
     rebin_signal=1,
-    scale_background=None,
-    rebin_background=1,
-    min_base_variance=None,
     use_other_model=None,
     use_other_kernel=None,
 ):
     signal_injections = signal_injections or [0.0, 1.0, 4.0, 16.0]
-    base_dir = Path(base_dir)
-
-    with open(signal_path, "rb") as f:
-        signal_file = pkl.load(f)
-    with open(background_path, "rb") as f:
-        background = pkl.load(f)
-    bkg_hist = background
-
-    logger.info(bkg_hist)
-
-    if scale_background is not None:
-        bkg_hist = bkg_hist.copy(deep=True)
-        bkg_hist = bkg_hist * scale_background
-        bkg_hist.view(flow=True).variance = bkg_hist.view(flow=True).value
-
-    logger.info(bkg_hist)
-    logger.info(f"Post scale background is ")
-
-    if min_base_variance:
-        import numpy as np
-
-        bkg_hist = bkg_hist.copy(deep=True)
-        v = bkg_hist.view(flow=False).variance
-        bkg_hist.view(flow=False).variance = np.clip(v, a_min=5, a_max=None)
-
-    bkg_hist = bkg_hist[hist.rebin(rebin_background), hist.rebin(rebin_background)]
-
-    logger.info(bkg_hist)
-    bkg_bin_size = np.mean(np.diff(bkg_hist.axes[0].centers))
-    logger.info(f"Background bin size is {bkg_bin_size}")
-    a1, a2 = bkg_hist.axes
-    a1_min, a1_max = a1.edges.min() + 0.000001, a1.edges.max()
-    a2_min, a2_max = a2.edges.min() + 0.000001, a2.edges.max()
-    signal_hist = signal_file[signal_name, signal_selection]["hist"]
-
-    logger.info(signal_hist)
-
-    sig_bin_size = np.mean(np.diff(signal_hist.axes[0].centers))
-    logger.info(f"Signal bin size is {sig_bin_size}")
-    ratio = bkg_bin_size / sig_bin_size
-    rebin_signal = round(ratio)
-    logger.info(f"Rebinning signal by {rebin_signal} based on ratio {ratio:0.2f}")
-    signal_hist = signal_hist[
-        hist.loc(a1_min) : hist.loc(a1_max), hist.loc(a2_min) : hist.loc(a2_max)
-    ]
-
-    signal_hist = signal_hist[hist.rebin(rebin_signal), hist.rebin(rebin_signal)]
-
-    logger.info(bkg_hist)
-    logger.info(signal_hist)
-    #
-    # signal_hist = signal_hist_with_flow.copy(deep=True)
-    # signal_hist.view(flow=True).value = signal_hist_with_flow.values(flow=False)
-    # signal_hist.view(flow=True).variance = signal_hist_with_flow.variances(flow=False)
-
     sig_dir = base_dir  # / signal_name
     sig_dir.mkdir(exist_ok=True, parents=True)
     signal_regression_data = DataValues.fromHistogram(signal_hist)
-    if blinding_signal:
-        import scipy
-
-        try:
-            window = GaussianWindow2D.fromData(
-                signal_regression_data, spread=window_spread
-            )
-            # temp = signal_hist.copy(deep=True)
-            # sd = regression.DataValues.fromHist(signal_hist)
-            # smoothed = window.vals(sd.X)
-
-        except (scipy.optimize.OptimizeWarning, RuntimeError) as e:
-            raise e
-            window = None
-    else:
-        logger.warn(f"Could not find a window for signal {signal_name}")
-        window = None
     sd = dict(
         signal_data=signal_regression_data,
         signal_hist=signal_hist,
@@ -219,7 +141,7 @@ def estimateSingle2D(
             trained_model = regress(
                 to_estimate,
                 base_dir,
-                min_counts=10,
+                min_counts=-1,
                 window=window,
                 use_cuda=True,
                 iterations=iterations,
@@ -231,6 +153,132 @@ def estimateSingle2D(
         # trained_model.metadata.update(add_metadata)
         torch.save(trained_model, save_dir / "bkg_estimation_result.pth")
         plotDiagnostics(save_dir, trained_model)
+
+
+def estimateSingle2D(
+    background_path,
+    signal_path,
+    signal_name,
+    signal_selection,
+    background_name,
+    base_dir,
+    window_spread=1.0,
+    blinding_signal=True,
+    inject_other_signals=None,
+    rebin_background=1,
+    rebin_signal=1,
+    scale_background=None,
+    min_base_variance=None,
+    **kwargs,
+):
+    base_dir = Path(base_dir)
+
+    with open(signal_path, "rb") as f:
+        signal_file = pkl.load(f)
+    with open(background_path, "rb") as f:
+        background = pkl.load(f)
+    bkg_hist = background
+
+    logger.info(bkg_hist)
+
+    if scale_background is not None:
+        bkg_hist = bkg_hist.copy(deep=True)
+        bkg_hist = bkg_hist * scale_background
+        bkg_hist.view(flow=True).variance = bkg_hist.view(flow=True).value
+
+    logger.info(bkg_hist)
+    logger.info(f"Post scale background is ")
+
+    if min_base_variance:
+        import numpy as np
+
+        bkg_hist = bkg_hist.copy(deep=True)
+        v = bkg_hist.view(flow=False).variance
+        bkg_hist.view(flow=False).variance = np.clip(v, a_min=5, a_max=None)
+
+    bkg_hist = bkg_hist[hist.rebin(rebin_background), hist.rebin(rebin_background)]
+    bkg_bin_size = np.mean(np.diff(bkg_hist.axes[0].centers))
+    logger.info(f"Background bin size is {bkg_bin_size}")
+    a1, a2 = bkg_hist.axes
+    a1_min, a1_max = a1.edges.min() + 0.000001, a1.edges.max()
+    a2_min, a2_max = a2.edges.min() + 0.000001, a2.edges.max()
+    signal_hist = signal_file[signal_name, signal_selection]["hist"]
+
+    sig_bin_size = np.mean(np.diff(signal_hist.axes[0].centers))
+    logger.info(f"Signal bin size is {sig_bin_size}")
+    ratio = bkg_bin_size / sig_bin_size
+    rebin_signal = round(ratio)
+    logger.info(f"Rebinning signal by {rebin_signal} based on ratio {ratio:0.2f}")
+    signal_hist = signal_hist[
+        hist.loc(a1_min) : hist.loc(a1_max), hist.loc(a2_min) : hist.loc(a2_max)
+    ]
+
+    signal_hist = signal_hist[hist.rebin(rebin_signal), hist.rebin(rebin_signal)]
+
+    logger.info(bkg_hist)
+    logger.info(signal_hist)
+
+    sig_dir = base_dir  # / signal_name
+    sig_dir.mkdir(exist_ok=True, parents=True)
+    signal_regression_data = DataValues.fromHistogram(signal_hist)
+    if blinding_signal:
+        import scipy
+
+        try:
+            window = GaussianWindow2D.fromData(
+                signal_regression_data, spread=window_spread
+            )
+        except (scipy.optimize.OptimizeWarning, RuntimeError) as e:
+            raise e
+            window = None
+    else:
+        logger.warn(f"Could not find a window for signal {signal_name}")
+        window = None
+    sd = dict(
+        signal_data=signal_regression_data,
+        signal_hist=signal_hist,
+        signal_name=signal_name,
+    )
+    if not inject_other_signals:
+        estimateSingle2DWithWindow(
+            signal_name,
+            signal_hist,
+            bkg_hist,
+            window,
+            base_dir,
+            rebin_signal=rebin_signal,
+            **kwargs,
+        )
+    else:
+        for other_signal in inject_other_signals:
+            path, name = other_signal.split(":")
+            with open(path, "rb") as f:
+                signal_file = pkl.load(f)
+
+            signal_hist = signal_file[name, signal_selection]["hist"]
+            sig_bin_size = np.mean(np.diff(signal_hist.axes[0].centers))
+            logger.info(f"Signal bin size is {sig_bin_size}")
+            ratio = bkg_bin_size / sig_bin_size
+            rebin_signal = round(ratio)
+            logger.info(
+                f"Rebinning signal by {rebin_signal} based on ratio {ratio:0.2f}"
+            )
+            signal_hist = signal_hist[
+                hist.loc(a1_min) : hist.loc(a1_max), hist.loc(a2_min) : hist.loc(a2_max)
+            ]
+
+            signal_hist = signal_hist[
+                hist.rebin(rebin_signal), hist.rebin(rebin_signal)
+            ]
+            estimateSingle2DWithWindow(
+                signal_name,
+                signal_hist,
+                bkg_hist,
+                window,
+                Path(base_dir) / f"inject_{name}",
+                rebin_signal=rebin_signal,
+                **kwargs,
+            )
 
 
 def main(args):
@@ -262,6 +310,7 @@ def main(args):
         signal_injections=args.injected,
         min_base_variance=5,
         use_other_model=other_model,
+        inject_other_signals=args.inject_other_signals,
     )
 
 
@@ -291,6 +340,7 @@ def addToParser(parser):
     parser.add_argument("-i", "--iterations", type=int, default=100)
     parser.add_argument("--cuda", action="store_true", help="Use cuda", default=False)
     parser.add_argument("--spread", type=float, default=1.0)
+    parser.add_argument("--inject-other-signals", default=None, type=str, nargs="*")
     parser.add_argument("--use-other-model", type=str)
     parser.add_argument(
         "--blind-signal", default=True, action=argparse.BooleanOptionalAction

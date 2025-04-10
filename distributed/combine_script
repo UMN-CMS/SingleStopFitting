@@ -28,6 +28,7 @@ echo "STARTING COMBINE"
 text2workspace.py $dest/$signal/inject_r_0p0/datacard.txt
 text2workspace.py $dest/$signal/inject_r_1p0/datacard.txt
 text2workspace.py $dest/$signal/inject_r_4p0/datacard.txt
+text2workspace.py $dest/$signal/inject_r_9p0/datacard.txt
 text2workspace.py $dest/$signal/inject_r_16p0/datacard.txt
 
 combineTool.py -M Significance -d $dest/$signal/inject_r_1p0/datacard.root  --there -n .sig  
@@ -35,6 +36,9 @@ combineTool.py -M MultiDimFit -d $dest/$signal/inject_r_1p0/datacard.root  --the
 
 combineTool.py -M Significance -d $dest/$signal/inject_r_4p0/datacard.root  --there -n .sig
 combineTool.py -M MultiDimFit -d $dest/$signal/inject_r_4p0/datacard.root  --there -n .fit
+
+combineTool.py -M Significance -d $dest/$signal/inject_r_9p0/datacard.root  --there -n .sig
+combineTool.py -M MultiDimFit -d $dest/$signal/inject_r_9p0/datacard.root  --there -n .fit
 
 combineTool.py -M Significance -d $dest/$signal/inject_r_16p0/datacard.root  --there -n .sig 
 combineTool.py -M MultiDimFit -d $dest/$signal/inject_r_16p0/datacard.root  --there -n .fit 

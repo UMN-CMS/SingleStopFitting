@@ -349,6 +349,9 @@ def doCompleteRegression(
     all_data = DataValues.fromHistogram(histogram)
     domain_mask = domain_blinder(all_data.X, all_data.Y)
 
+    logger.info(f"Setting min gaussian likelihood to 3")
+    all_data.V = torch.clamp(all_data.V, min=3)
+
     test_data = all_data[domain_mask]
     if window_blinder is not None:
         window_mask = window_blinder(test_data.X)
