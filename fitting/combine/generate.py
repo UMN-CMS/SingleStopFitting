@@ -67,7 +67,6 @@ def createDatacard(obs, pred, signal_data, output_dir, signal_meta=None):
 
     card.setProcessRate(sig, b1, -1)
     card.setProcessRate(bkg, b1, -1)
-http://cms-analysis.github.io/HiggsAnalysis-CombinedLimit/part3/nonstandard/#nuisance-parameter-impacts
     card.addShape(
         bkg,
         b1,
@@ -89,8 +88,8 @@ http://cms-analysis.github.io/HiggsAnalysis-CombinedLimit/part3/nonstandard/#nui
 
     metadata = {"signal_metadata": signal_meta}
 
-    with open(output_dir / "metadata.json", "w") as f:
-        f.write(json.dumps(metadata))
+    # with open(output_dir / "metadata.json", "w") as f:
+    #     f.write(json.dumps(metadata))
 
 
 def main(args):

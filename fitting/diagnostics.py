@@ -12,18 +12,24 @@ from . import regression
 from .plotting.plots import makeDiagnosticPlots, makeCovariancePlots, plotRaw
 from .predictive import makePosteriorPred, makePValuePlots
 from .utils import chi2Bins
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 def plotDiagnostics(save_dir, trained_model, **kwargs):
     model = regression.loadModel(trained_model)
-    _, coupling, mt, mx = trained_model.metadata["signal_name"].split("_")
+    tm = trained_model.metadata
+    coupling, mt, mx = tm["coupling"], tm["mt"], tm["mx"]
     mt, mx = float(mt), float(mx)
     all_data, train_mask = regression.getModelingData(trained_model)
+    extra_noise = None
+    if trained_model.learned_noise:
+        extra_noise = model.likelihood.second_noise
+    logger.info(f"Diagonstics: extra noise is {extra_noise}")
+
     pred_dist = regression.getPosteriorProcess(
-        model,
-        all_data,
-        trained_model.transform,
-        # extra_noise=model.likelihood.second_noise
+        model, all_data, trained_model.transform, extra_noise=extra_noise
     )
 
     pred_data = DataValues(all_data.X, pred_dist.mean, pred_dist.variance, all_data.E)
@@ -60,6 +66,7 @@ def plotDiagnostics(save_dir, trained_model, **kwargs):
             obj.savefig((save_dir / name).with_suffix(f".{ext}"))
             plt.close(obj)
 
+
     diagnostic_plots = makeDiagnosticPlots(
         pred_data,
         all_data,
@@ -71,10 +78,10 @@ def plotDiagnostics(save_dir, trained_model, **kwargs):
 
     saveFunc("chi2_info", data)
 
+    makePValuePlots(pred_dist, all_data, train_mask, saveFunc)
     makePosteriorPred(pred_dist, all_data, saveFunc, train_mask)
     for point in [[mt, mx / mt]]:
         makeCovariancePlots(model, trained_model.transform, all_data, point, saveFunc)
-    makePValuePlots(pred_dist, all_data, train_mask, saveFunc)
 
 
 def plotCovarsForPoints(save_dir, trained_model, points):
@@ -146,7 +153,7 @@ def main(args):
     mplhep.style.use("CMS")
 
     out = args.outdir or Path(args.input).parent
-    m = torch.load(args.input,  weights_only=False )
+    m = torch.load(args.input, weights_only=False)
     plotDiagnostics(out, m)
 
 
@@ -154,7 +161,7 @@ def runEigens(args):
     import torch
 
     out = args.outdir or Path(args.input).parent
-    m = torch.load(args.input,  weights_only=False )
+    m = torch.load(args.input, weights_only=False)
     plotEigenvars(out, m, args.min_frac)
 
 
@@ -162,7 +169,7 @@ def runCovars(args):
     import torch
 
     out = args.outdir or Path(args.input).parent
-    m = torch.load(args.input,  weights_only=False )
+    m = torch.load(args.input, weights_only=False)
     plotCovarsForPoints(out, m, args.points)
 
 

@@ -121,13 +121,13 @@ def wrapNN(cls_name, kernel):
                 if x[1] is not None
             )
             self.feature_extractor = LargeFeatureExtractor(**nnargs)
-        self.scale_to_bounds = gpytorch.utils.grid.ScaleToBounds(-4.0, 4.0)
+        self.scale_to_bounds = gpytorch.utils.grid.ScaleToBounds(-1.0, 1.0)
 
         def init_weights(m):
             if isinstance(m, torch.nn.Linear):
                 torch.nn.init.xavier_uniform_(m.weight)
 
-        # self.apply(init_weights)
+        self.apply(init_weights)
 
     def forward(self, x1, x2, **params):
         # x1_, x2_ = (
@@ -246,7 +246,9 @@ class NonStatParametric2D(gpytorch.models.ExactGP):
 
 
 class MyNNRBFModel2D(gpytorch.models.ExactGP):
-    def __init__(self, train_x, train_y, likelihood, inducing_ratio=2, num_inducing=None):
+    def __init__(
+        self, train_x, train_y, likelihood, inducing_ratio=1, num_inducing=None
+    ):
 
         if num_inducing and inducing_ratio:
             raise RuntimeError("Cannot have both num inducing and inducing ratio")
@@ -262,49 +264,24 @@ class MyNNRBFModel2D(gpytorch.models.ExactGP):
             self.num_inducing = num_inducing
             ind = train_x[:num_inducing].clone()
 
-        self.mean_module = gpytorch.means.ConstantMean()
-
-        # self.base_covar_module = gpytorch.kernels.ScaleKernel(
-        #     NNMaternKernel(idim=2, odim=2, layer_sizes=(16, 8))
-        # )
-        # base_covar_module = SK(NNMaternKernel(idim=2, odim=2, layer_sizes=(8, 4))) + SK(
-        #     gpytorch.kernels.RBFKernel(ard_num_dims=2)
-        # )
-
-        base_covar_module = SK(gpytorch.kernels.RBFKernel(ard_num_dims=2)) + SK(
-            NNRBFKernel(idim=2, odim=2, layer_sizes=(32, 16, 8))
-        )
-        base_covar_module = SK(NNRBFKernel(idim=2, odim=2, layer_sizes=(40, 20)))
-
-        # base_covar_module = SK(gpytorch.kernels.RBFKernel(ard_num_dims=2)) + SK(
-        #     gpytorch.kernels.MaternKernel(ard_num_dims=2, mu=2.5)
-        # )
+        self.mean_module = gpytorch.means.ZeroMean()
 
         # base_covar_module = SK(gpytorch.kernels.RBFKernel(ard_num_dims=2))
+        # base_covar_module = SK(gpytorch.kernels.MaternKernel(ard_num_dims=2))
+        base_covar_module = SK(gpytorch.kernels.RBFKernel(ard_num_dims=2)) + SK(NNRBFKernel(idim=2, odim=2, layer_sizes=(8, 4)))
 
-        # base_covar_module = SK(NNRBFKernel(idim=2, odim=2, layer_sizes=(8, 4)))
+        # base_covar_module = SK(NNRBFKernel(idim=2, odim=2, layer_sizes=(32, 16)))
+        base_covar_module = SK(NNRBFKernel(idim=2, odim=2, layer_sizes=(8,4))) + SK(NNRBFKernel(idim=2, odim=2, layer_sizes=(8,4)))
 
-        # base_covar_module = NNSMKernel(num_mixtures=4).cuda(e
-        # base_covar_module.initialize_from_data(train_x, train_y)
+        # base_covar_module = SK(gpytorch.kernels.RBFKernel(ard_num_dims=2)) + SK(NNMaternKernel(idim=2, odim=2, layer_sizes=(8, 4)))
 
-        # base_covar_module = gpytorch.kernels.ScaleKernel(
-        #     gpytorch.kernels.RBFKernel(ard_num_dims=2)
+        # self.covar_module = gpytorch.kernels.InducingPointKernel(
+        #     base_covar_module,
+        #     likelihood=likelihood,
+        #     inducing_points=ind,
         # )
 
-        # self.feature_extractor = LargeFeatureExtractor(
-        #     odim=2, idim=2, layer_sizes=(8, 4)
-        # )
-        # self.scale_to_bounds = gpytorch.utils.grid.ScaleToBounds(-1.0, 1.0)
-
-        print("HERE")
-
-        self.covar_module = gpytorch.kernels.InducingPointKernel(
-            base_covar_module,
-            likelihood=likelihood,
-            inducing_points=ind,
-        )
-
-        # self.covar_module = base_covar_module
+        self.covar_module = base_covar_module
 
         # self.covar_module.inducing_points.requires_grad = False
         # gs = gpytorch.utils.grid.choose_grid_size(train_x, 0.25)
@@ -314,6 +291,9 @@ class MyNNRBFModel2D(gpytorch.models.ExactGP):
         #     num_dims=2,
         #     grid_size=gs,
         # )
+
+        # self.feature_extractor = LargeFeatureExtractor(layer_sizes=(16,8))
+        # self.scale_to_bounds = gpytorch.utils.grid.ScaleToBounds(-1.0,1.0)
 
     def forward(self, x):
         # x = self.feature_extractor(x)

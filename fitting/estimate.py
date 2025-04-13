@@ -1,4 +1,5 @@
 import argparse
+import json
 import logging
 import pickle as pkl
 from pathlib import Path
@@ -80,7 +81,7 @@ def regress(
         window,
         iterations=iterations,
         use_cuda=use_cuda,
-        learn_noise=False,
+        learn_noise=True,
         lr=learning_rate,
         validate_function=validate,
     )
@@ -101,7 +102,9 @@ def estimateSingle2DWithWindow(
     rebin_signal=1,
     use_other_model=None,
     use_other_kernel=None,
+    extra_metadata=None,
 ):
+    extra_metadata = extra_metadata or {}
     signal_injections = signal_injections or [0.0, 1.0, 4.0, 16.0]
     sig_dir = base_dir  # / signal_name
     sig_dir.mkdir(exist_ok=True, parents=True)
@@ -122,6 +125,23 @@ def estimateSingle2DWithWindow(
 
     windowPlots2D(signal_regression_data, window, saveFunc)
     torch.save(sd, sig_dir / "signal_data.pth")
+    _, coupling, stop, chi = signal_name.split("_")
+    model_data = {
+        "coupling": coupling,
+        "mt": int(stop),
+        "mx": int(chi),
+        "x_bounds": [
+            float(signal_regression_data.X[:, 0].min()),
+            float(signal_regression_data.X[:, 0].max()),
+        ],
+        "y_bounds": [
+            float(signal_regression_data.X[:, 1].min()),
+            float(signal_regression_data.X[:, 1].max()),
+        ],
+    }
+
+    model_data.update(extra_metadata)
+
     for r in signal_injections:
         print(window)
         save_dir = sig_dir / f"inject_r_{str(round(r,3)).replace('.','p')}"
@@ -141,15 +161,17 @@ def estimateSingle2DWithWindow(
             trained_model = regress(
                 to_estimate,
                 base_dir,
-                min_counts=-1,
+                # min_counts=20,
                 window=window,
                 use_cuda=True,
                 iterations=iterations,
                 learning_rate=learning_rate,
             )
-        trained_model.metadata.update(
-            {"signal_injected": r, "signal_name": signal_name}
-        )
+        this_injection_data = {**model_data, "signal_injected": r}
+        trained_model.metadata.update(this_injection_data)
+        with open(save_dir / "metadata.json", "w") as f:
+            json.dump(this_injection_data, f, indent=2)
+
         # trained_model.metadata.update(add_metadata)
         torch.save(trained_model, save_dir / "bkg_estimation_result.pth")
         plotDiagnostics(save_dir, trained_model)
@@ -270,18 +292,38 @@ def estimateSingle2D(
             signal_hist = signal_hist[
                 hist.rebin(rebin_signal), hist.rebin(rebin_signal)
             ]
-            estimateSingle2DWithWindow(
-                signal_name,
-                signal_hist,
-                bkg_hist,
-                window,
-                Path(base_dir) / f"inject_{name}",
-                rebin_signal=rebin_signal,
-                **kwargs,
-            )
+            with (
+                gpytorch.settings.fast_computations(
+                    covar_root_decomposition=False, log_prob=False, solves=False
+                ),
+                gpytorch.settings.fast_pred_samples(state=False),
+                gpytorch.settings.fast_pred_var(state=False),
+                gpytorch.settings.lazily_evaluate_kernels(state=False),
+            ):
+                estimateSingle2DWithWindow(
+                    signal_name,
+                    signal_hist,
+                    bkg_hist,
+                    window,
+                    Path(base_dir) / f"inject_{name}",
+                    rebin_signal=rebin_signal,
+                    **kwargs,
+                )
+
+
+def argEq(x):
+    left, right = x.split("=")
+    return {left: right}
 
 
 def main(args):
+    import gpytorch
+
+    # gpytorch.settings.lazily_evaluate_kernels(state=False)
+    # gpytorch.settings.cholesky_max_tries(1000000)
+    # gpytorch.settings.lazily_evaluate_kernels(state=True)
+    torch.set_default_dtype(torch.float64)
+
     mpl.use("Agg")
     mplhep.style.use("CMS")
     if not args.blind_signal:
@@ -292,6 +334,11 @@ def main(args):
         other_model_data = torch.load(args.use_other_model, weights_only=False)
         other_model = regression.loadModel(other_model_data)
 
+    extra_metadata = {
+        k: v for d in map(argEq, args.metadata or []) for k, v in d.items()
+    }
+
+    logger.info(extra_metadata)
     estimateSingle2D(
         background_path=args.background,
         signal_path=args.signal,
@@ -311,6 +358,7 @@ def main(args):
         min_base_variance=5,
         use_other_model=other_model,
         inject_other_signals=args.inject_other_signals,
+        extra_metadata=extra_metadata,
     )
 
 
@@ -339,8 +387,9 @@ def addToParser(parser):
     parser.add_argument("--injected", type=float, nargs="*", default=[0.0])
     parser.add_argument("-i", "--iterations", type=int, default=100)
     parser.add_argument("--cuda", action="store_true", help="Use cuda", default=False)
-    parser.add_argument("--spread", type=float, default=1.0)
+    parser.add_argument("--spread", type=float, default=1.5)
     parser.add_argument("--inject-other-signals", default=None, type=str, nargs="*")
+    parser.add_argument("--metadata", default=None, type=str, nargs="*")
     parser.add_argument("--use-other-model", type=str)
     parser.add_argument(
         "--blind-signal", default=True, action=argparse.BooleanOptionalAction

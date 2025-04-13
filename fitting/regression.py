@@ -23,6 +23,9 @@ from .utils import dataToHist, computePosterior, chi2Bins
 
 logger = logging.getLogger(__name__)
 
+min_noise = 1e-7
+max_noise=  1e-4
+
 
 @dataclass
 class TrainedModel:
@@ -55,7 +58,6 @@ def getModelingData(trained_model, other_data=None):
         bm = trained_model.blind_mask
     else:
         bm = torch.zeros_like(all_data.Y, dtype=bool)
-
     return all_data, bm
 
 
@@ -70,10 +72,11 @@ def loadModel(trained_model, other_data=None):
     normalized_blinded_data = transform.transform(blinded_data)
     normalized_all_data = transform.transform(all_data)
 
+    logger.info(f"Loading model, learned noise is {trained_model.learned_noise}")
     likelihood = gpytorch.likelihoods.FixedNoiseGaussianLikelihood(
         noise=normalized_blinded_data.V,
         learn_additional_noise=trained_model.learned_noise,
-        noise_constraint=gpytorch.constraints.GreaterThan(1e-10),
+        noise_constraint=gpytorch.constraints.Interval(min_noise,max_noise)
     )
 
     inducing = model_state.get("covar_module.inducing_points")
@@ -106,17 +109,25 @@ def getPosteriorProcess(model, data, transform, extra_noise=None):
         normalized_data,
         slope=transform.transform_y.slope,
         intercept=transform.transform_y.intercept,
+        extra_noise=extra_noise,
     )
-    logger.info(pred_dist.variance)
-    logger.info(f"Extra noise is {extra_noise}")
-    if extra_noise is not None:
-        en = transform.transform_y.iTransformVariances(extra_noise)
-        new_cov = torch.diag(torch.ones(pred_dist.variance.size(0)) * en).detach()
-        to_add = gpytorch.distributions.MultivariateNormal(
-            torch.zeros_like(pred_dist.mean).detach(), new_cov
-        )
-        pred_dist += to_add
-    logger.info(pred_dist.variance)
+    # logger.info(pred_dist.variance)
+    # if extra_noise is not None:
+    #     en = transform.transform_y.iTransformVariances(extra_noise)
+    #     # en = extra_noise
+    #     # logger.info(
+    #     #     f"Extra noise is {transform.transform_y.iTransformVariances(extra_noise)}"
+    #     # )
+    #     logger.info(f"Extra noise is {en}")
+    #     new_cov = torch.diag(torch.ones(pred_dist.variance.size(0)) * en).detach()
+    #     to_add = gpytorch.distributions.MultivariateNormal(
+    #         torch.zeros_like(pred_dist.mean).detach(), torch.sqrt(new_cov)
+    #     )
+    #     # pred_dist = gpytorch.distributions.MultivariateNormal(
+    #     #     pred_dist.mean, pred_dist.covariance_matrix + new_cov
+    #     # )
+    #     # pred_dist += to_add
+    # logger.info(pred_dist.variance)
     return pred_dist
 
 
@@ -170,6 +181,7 @@ class DataValues:
     def fromHistogram(histogram):
         edges = tuple(torch.from_numpy(a.edges) for a in histogram.axes)
         centers = tuple(torch.diff(e) / 2 + e[:-1] for e in edges)
+        print(centers[0].dtype)
         bin_values = torch.from_numpy(histogram.values())
         bin_vars = torch.from_numpy(histogram.variances())
         bin_values = bin_values.T
@@ -223,29 +235,29 @@ def optimizeHyperparams(
         "parameters": [],
     }
 
-    with linear_operator.settings.max_cg_iterations(10000):
-        for i in range(iterations):
-            optimizer.zero_grad()
-            output = model(train_data.X)
-            loss = -mll(output, train_data.Y)
-            loss.backward()
-            optimizer.step()
-            # scheduler.step()
-            # slr = scheduler.get_last_lr()[0]
-            if validate_function is not None and False:
-                c2u, c2b = validate_function(model)
-                training_progress["chi2_unblind"].append(c2u.detach())
-                training_progress["chi2_blind"].append(c2b.detach())
-            if (i % (iterations // 20) == 0) or i == iterations - 1:
-                logger.info(f"Iter {i} (lr={lr:0.4f}): Loss={round(loss.item(),4)}")
-                # for n, k in model.named_parameters():
-                #     logger.info(f"{n}: {k}")
-                c2u, c2b = validate_function(model)
-            torch.cuda.empty_cache()
-            training_progress["loss"].append(loss.detach())
-            training_progress["parameters"].append(
-                dict((x, y.detach()) for x, y in model.named_parameters())
-            )
+    # with linear_operator.settings.max_cg_iterations(10):
+    for i in range(iterations):
+        optimizer.zero_grad()
+        output = model(train_data.X)
+        loss = -mll(output, train_data.Y)
+        loss.backward()
+        optimizer.step()
+        # scheduler.step()
+        # slr = scheduler.get_last_lr()[0]
+        if validate_function is not None and False:
+            c2u, c2b = validate_function(model)
+            training_progress["chi2_unblind"].append(c2u.detach())
+            training_progress["chi2_blind"].append(c2b.detach())
+        if (i % (iterations // 20) == 0) or i == iterations - 1:
+            logger.info(f"Iter {i} (lr={lr:0.4f}): Loss={round(loss.item(),4)}")
+            # for n, k in model.named_parameters():
+            #     logger.info(f"{n}: {k}")
+            c2u, c2b = validate_function(model)
+        torch.cuda.empty_cache()
+        training_progress["loss"].append(loss.detach())
+        training_progress["parameters"].append(
+            dict((x, y.detach()) for x, y in model.named_parameters())
+        )
 
     # for n, k in model.named_parameters():
     #     print(f"{n}: {k}")
@@ -312,7 +324,7 @@ def updateModelNewData(
     likelihood = gpytorch.likelihoods.FixedNoiseGaussianLikelihood(
         noise=train.V,
         learn_additional_noise=learn_noise,
-        noise_constraint=gpytorch.constraints.GreaterThan(1e-20),
+        noise_constraint=gpytorch.constraints.Interval(min_noise,max_noise),
     )
     model.set_train_data(train.X, train.Y, strict=False)
     model.likelhood = likelihood
@@ -358,7 +370,7 @@ def doCompleteRegression(
     else:
         window_mask = ~torch.ones_like(test_data.Y, dtype=bool)
 
-    train_data = test_data[~window_mask][::1]
+    train_data = test_data[~window_mask]
     # print(torch.count_nonzero(domain_mask))
     # print(torch.count_nonzero(window_mask))
     # print(test_data.X.shape)
@@ -382,7 +394,7 @@ def doCompleteRegression(
     likelihood = gpytorch.likelihoods.FixedNoiseGaussianLikelihood(
         noise=train.V,
         learn_additional_noise=learn_noise,
-        noise_constraint=gpytorch.constraints.GreaterThan(1e-4),
+        noise_constraint=gpytorch.constraints.Interval(min_noise,max_noise),
     )
 
     # likelihood = gpytorch.likelihoods.GaussianLikelihood()

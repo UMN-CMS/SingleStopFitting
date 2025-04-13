@@ -13,7 +13,7 @@ def getSignalParts(path):
 
 
 def getMassArea(m):
-    mapping = reversed([(0, "low"), (1200, "med"), (1700, "high")])
+    mapping = reversed([(0, "low"), (1250, "med"), (1750, "high")])
     for x, y in mapping:
         if m > x:
             return y
@@ -21,6 +21,7 @@ def getMassArea(m):
 
 def getCat(s, c):
     c = float(c)
+    return ["comp", "uncomp"]
     if c / s > 0.8:
         return ["comp"]
     elif c / s > 0.6:
