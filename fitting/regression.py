@@ -1,4 +1,7 @@
 from dataclasses import dataclass
+import code
+import readline
+import rlcompleter
 
 import linear_operator
 import copy
@@ -23,8 +26,8 @@ from .utils import dataToHist, computePosterior, chi2Bins
 
 logger = logging.getLogger(__name__)
 
-min_noise = 1e-7
-max_noise=  1e-4
+min_noise = 1e-10
+max_noise = 1e-3
 
 
 @dataclass
@@ -76,7 +79,7 @@ def loadModel(trained_model, other_data=None):
     likelihood = gpytorch.likelihoods.FixedNoiseGaussianLikelihood(
         noise=normalized_blinded_data.V,
         learn_additional_noise=trained_model.learned_noise,
-        noise_constraint=gpytorch.constraints.Interval(min_noise,max_noise)
+        noise_constraint=gpytorch.constraints.Interval(min_noise, max_noise),
     )
 
     inducing = model_state.get("covar_module.inducing_points")
@@ -259,9 +262,15 @@ def optimizeHyperparams(
             dict((x, y.detach()) for x, y in model.named_parameters())
         )
 
-    # for n, k in model.named_parameters():
-    #     print(f"{n}: {k}")
-    # print(model.likelihood.noise)
+    vars = globals()
+    vars.update(locals())
+    readline.set_completer(rlcompleter.Completer(vars).complete)
+    readline.parse_and_bind("tab: complete")
+    # code.InteractiveConsole(vars).interact()
+    for x in model.modules():
+        if hasattr(x, "outputscale"):
+            print(f"{type(x).__name__}: outputscale = {x.outputscale}")
+    print(list(model.named_parameters()))
 
     return model, likelihood, loss, training_progress
 
@@ -324,7 +333,7 @@ def updateModelNewData(
     likelihood = gpytorch.likelihoods.FixedNoiseGaussianLikelihood(
         noise=train.V,
         learn_additional_noise=learn_noise,
-        noise_constraint=gpytorch.constraints.Interval(min_noise,max_noise),
+        noise_constraint=gpytorch.constraints.Interval(min_noise, max_noise),
     )
     model.set_train_data(train.X, train.Y, strict=False)
     model.likelhood = likelihood
@@ -361,8 +370,8 @@ def doCompleteRegression(
     all_data = DataValues.fromHistogram(histogram)
     domain_mask = domain_blinder(all_data.X, all_data.Y)
 
-    logger.info(f"Setting min gaussian likelihood to 3")
-    all_data.V = torch.clamp(all_data.V, min=3)
+    logger.info(f"Setting min gaussian likelihood to 5")
+    all_data.V = torch.clamp(all_data.V, min=5)
 
     test_data = all_data[domain_mask]
     if window_blinder is not None:
@@ -394,7 +403,7 @@ def doCompleteRegression(
     likelihood = gpytorch.likelihoods.FixedNoiseGaussianLikelihood(
         noise=train.V,
         learn_additional_noise=learn_noise,
-        noise_constraint=gpytorch.constraints.Interval(min_noise,max_noise),
+        noise_constraint=gpytorch.constraints.Interval(min_noise, max_noise),
     )
 
     # likelihood = gpytorch.likelihoods.GaussianLikelihood()

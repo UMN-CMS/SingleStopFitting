@@ -264,16 +264,36 @@ class MyNNRBFModel2D(gpytorch.models.ExactGP):
             self.num_inducing = num_inducing
             ind = train_x[:num_inducing].clone()
 
-        self.mean_module = gpytorch.means.ZeroMean()
+        self.mean_module = gpytorch.means.ConstantMean()
 
         # base_covar_module = SK(gpytorch.kernels.RBFKernel(ard_num_dims=2))
-        # base_covar_module = SK(gpytorch.kernels.MaternKernel(ard_num_dims=2))
-        base_covar_module = SK(gpytorch.kernels.RBFKernel(ard_num_dims=2)) + SK(NNRBFKernel(idim=2, odim=2, layer_sizes=(8, 4)))
+        # base_covar_module = SK(gpytorch.kernels.RQKernel(ard_num_dims=2))
+        # base_covar_module = SK(gpytorch.kernels.MaternKernel(ard_num_dims=2), mu=2.5)
+        # base_covar_module = SK(
+        #     gpytorch.kernels.RBFKernel(ard_num_dims=2),
+        #     outputscale_constraint=gpytorch.constraints.Interval(0.2, 1.0),
+        # ) + SK(
+        #     NNRBFKernel(idim=2, odim=2, layer_sizes=(16, 8)),
+        #     outputscale_constraint=gpytorch.constraints.Interval(0.2, 1.0),
+        # )
+        # base_covar_module = gpytorch.kernels.SpectralMixtureKernel(
+        #     num_mixtures=4, ard_num_dims=2
+        # )
+        # base_covar_module.to(train_x.device)
+        # base_covar_module.initialize_from_data(train_x, train_y)
+        # base_covar_module = SK(NNRBFKernel(idim=2, odim=2, layer_sizes=(20,10)))
+        # base_covar_module = SK(NNRBFKernel(idim=2, odim=2, layer_sizes=(8,4))) + SK(NNRBFKernel(idim=2, odim=2, layer_sizes=(8,4)))
+        base_covar_module = SK(NNRBFKernel(idim=2, odim=2, layer_sizes=(8, 4))) * SK(
+            gpytorch.kernels.MaternKernel(idim=2, odim=2, mu=0.5)
+        )
+        # base_covar_module = SK(NNRBFKernel(idim=2, odim=2, layer_sizes=(2,))) + SK(
+        #     NNMaternKernel(idim=2, odim=2, layer_sizes=(8, 4), mu=1.5)
+        # )
 
-        # base_covar_module = SK(NNRBFKernel(idim=2, odim=2, layer_sizes=(32, 16)))
-        base_covar_module = SK(NNRBFKernel(idim=2, odim=2, layer_sizes=(8,4))) + SK(NNRBFKernel(idim=2, odim=2, layer_sizes=(8,4)))
-
-        # base_covar_module = SK(gpytorch.kernels.RBFKernel(ard_num_dims=2)) + SK(NNMaternKernel(idim=2, odim=2, layer_sizes=(8, 4)))
+        # base_covar_module = SK(gpytorch.kernels.RBFKernel(ard_num_dims=2)) + SK(
+        #     NNRQKernel(idim=2, odim=2, layer_sizes=(8, 4))
+        # )
+        # base_covar_module = SK(gpytorch.kernels.RBFKernel(ard_num_dims=2)) + SK(NonStatKernel(ard_num_dims=2, count=2))
 
         # self.covar_module = gpytorch.kernels.InducingPointKernel(
         #     base_covar_module,
@@ -292,7 +312,7 @@ class MyNNRBFModel2D(gpytorch.models.ExactGP):
         #     grid_size=gs,
         # )
 
-        # self.feature_extractor = LargeFeatureExtractor(layer_sizes=(16,8))
+        # self.feature_extractor = LargeFeatureExtractor(layer_sizes=(8,4))
         # self.scale_to_bounds = gpytorch.utils.grid.ScaleToBounds(-1.0,1.0)
 
     def forward(self, x):

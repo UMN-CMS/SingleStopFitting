@@ -161,7 +161,7 @@ def estimateSingle2DWithWindow(
             trained_model = regress(
                 to_estimate,
                 base_dir,
-                # min_counts=20,
+                min_counts=-1,
                 window=window,
                 use_cuda=True,
                 iterations=iterations,
