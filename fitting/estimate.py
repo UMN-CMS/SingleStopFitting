@@ -119,7 +119,7 @@ def estimateSingle2DWithWindow(
     print(signal_hist)
 
     def saveFunc(name, fig):
-        ext = "png"
+        ext = "pdf"
         fig.savefig((sig_dir / name).with_suffix(f".{ext}"))
         plt.close(fig)
 

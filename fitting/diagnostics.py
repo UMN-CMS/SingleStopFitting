@@ -60,7 +60,7 @@ def plotDiagnostics(save_dir, trained_model, **kwargs):
             with open(save_dir / f"{name}.json", "w") as f:
                 json.dump(obj, f)
         else:
-            ext = "png"
+            ext = "pdf"
             name = name.replace("(", "").replace(")", "").replace(".", "p")
             print(name)
             obj.savefig((save_dir / name).with_suffix(f".{ext}"))
@@ -98,7 +98,7 @@ def plotCovarsForPoints(save_dir, trained_model, points):
     for point in points:
 
         def saveFunc(name, fig):
-            ext = "png"
+            ext = "pdf"
             name = name.replace("(", "").replace(")", "").replace(".", "p")
             print(name)
             fig.savefig((save_dir / name).with_suffix(f".{ext}"))
@@ -133,7 +133,7 @@ def plotEigenvars(save_dir, trained_model, sig_percent=0.05):
     for i, (va, ve) in enumerate(zip(good_vals, good_vecs)):
 
         def saveFunc(name, fig):
-            ext = "png"
+            ext = "pdf"
             name = name.replace("(", "").replace(")", "").replace(".", "p")
             print(name)
             fig.savefig((save_dir / name).with_suffix(f".{ext}"))

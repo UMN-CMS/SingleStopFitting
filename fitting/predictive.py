@@ -270,7 +270,7 @@ def makePValuePlotsFromModel(trained_model, save_dir, test_stat=None):
             with open(save_dir / f"{name}.json", "w") as f:
                 json.dump(obj, f)
         else:
-            ext = "png"
+            ext = "pdf"
             name = name.replace("(", "").replace(")", "").replace(".", "p")
             print(name)
             obj.savefig((save_dir / name).with_suffix(f".{ext}"))
