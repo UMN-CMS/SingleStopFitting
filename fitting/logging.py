@@ -1,10 +1,10 @@
 import logging.config
 import logging
 
-logger = logging.getLogger(__name__)
 
 config = {
     "version": 1,
+    "disable_existing_loggers": False,
     "formatters": {
         "simple": {"format": "%(asctime)s - %(name)s - %(levelname)s - %(message)s"},
         "just_name": {"format": "%(name)s - %(message)s"},
@@ -26,6 +26,10 @@ config = {
 }
 
 
-def setupLogging():
+def setupLogging(
+    default_level=None,
+):
     logging.config.dictConfig(config)
-    logger.info("Setup logging")
+    if default_level is not None:
+        logger = logging.getLogger("fitting")
+        logger.setLevel(default_level)
