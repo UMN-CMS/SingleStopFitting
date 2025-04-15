@@ -63,10 +63,10 @@ def extractProperty(path, p, tree="limit"):
         with uproot.open(path) as f:
             limit = f[tree]
             sig = limit[p].array(library="np").tolist()
-        return {p: sig}
+        return sig
     except Exception as e:
         print(e)
-        return {p: None}
+        return None
 
 
 class ExtractGOF(object):
@@ -98,6 +98,10 @@ class ExtractFit(object):
         if not f.exists():
             return None
         val = extractProperty(f, "r")
+        if val:
+            val = val[0]
+        else:
+            val = None
         return {"r": val}
 
 

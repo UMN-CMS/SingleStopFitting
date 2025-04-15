@@ -35,13 +35,14 @@ def createHists(obs, pred, signal_data, root_file, sig_percent=0.0):
     nz = int(torch.count_nonzero(wanted))
     print(f"There are {nz} egeinvariations at least {sig_percent} of the max ")
     good_vals, good_vecs = vals[wanted], vecs[wanted]
-    print(torch.max(vals))
+    print(torch.max(torch.sqrt(vals)))
     for i, (va, ve) in enumerate(zip(good_vals, good_vecs)):
         v = torch.sqrt(va)
         # print(f"Magnitude is {torch.abs(v).max()}")
-        h_up = tensorToHist(mean + v * ve)
+        h_up = tensorToHist(torch.clip(mean + v * ve, min=0, max=None))
+        h_down = tensorToHist(torch.clip(mean - v * ve, min=0, max=None))
+
         root_file[f"bkg_estimate_EVAR_{i}Up"] = h_up
-        h_down = tensorToHist(mean - v * ve)
         root_file[f"bkg_estimate_EVAR_{i}Down"] = h_down
     return nz
 
@@ -54,7 +55,7 @@ def createDatacard(obs, pred, signal_data, output_dir, signal_meta=None):
     root_path = output_dir / "histograms.root"
     root_file = uproot.recreate(root_path)
 
-    nz = createHists(obs, pred, signal_data, root_file, 0.05)
+    nz = createHists(obs, pred, signal_data, root_file, 0.01)
 
     card = DataCard()
 
