@@ -1,7 +1,7 @@
 import argparse
 import sys
 
-# from pydantic import BaseClass
+from pydantic import BaseModel
 import fitting
 from rich import print
 import json
@@ -20,6 +20,17 @@ from collections import namedtuple
 SignalId = namedtuple("SignalId", "algo coupling mt mx")
 
 logger = logging.getLogger(__name__)
+
+
+class InjectionResult(BaseModel):
+    injection: float
+
+    regression_plots: dict[str, str]
+
+
+class SignalResult(BaseModel):
+    signal_id: SignalId
+    signal_metadata: dict
 
 
 def idFromMeta(data):
@@ -51,9 +62,11 @@ def loadOneGPR(directory):
 
     plots = {
         x.stem: str(x)
-        for x in it.chain(directory.glob("*.png"), directory.parent.glob("*.png"))
+        for x in it.chain(directory.glob("*.pdf"), directory.parent.glob("*.pdf"))
     }
-    plots["covar_center"] = next(y for x, y in plots.items() if "covariance_" in x)
+    plots["covar_center"] = next(
+        (y for x, y in plots.items() if "covariance_" in x), None
+    )
     data = {**data, "gpr_plots": plots}
     return data
 
@@ -105,10 +118,53 @@ class ExtractFit(object):
         return {"r": val}
 
 
+class ExtractSig(object):
+    def __init__(self, name, tag):
+        self.name = name
+        self.tag = tag
+
+    def __call__(self, directory):
+        directory = Path(directory)
+        f = directory / f"higgsCombine.{self.tag}.Significance.mH120.root"
+        logger.info(f"Attempting to load fit from {f}")
+        if not f.exists():
+            logger.info(f"Failed to load significance from {f}")
+            return None
+        val = extractProperty(f, "limit")
+        if val:
+            val = val[0]
+        else:
+            val = None
+        return val
+
+
+class ExtractLimit(object):
+    def __init__(self, name, tag):
+        self.name = name
+        self.tag = tag
+
+    def __call__(self, directory):
+        directory = Path(directory)
+        f = directory / f"higgsCombine.{self.tag}.AsymptoticLimits.mH120.root"
+        logger.info(f"Attempting to load fit from {f}")
+        if not f.exists():
+            logger.info(f"Failed to load limit from {f}")
+            return None
+        val = extractProperty(f, "limit")
+        if val:
+            k = ["5", "16", "50", "84", "95", "obs"]
+            val = dict(zip(k, val))
+        else:
+            val = None
+        return val
+
+
 combine_extractors = [
     ExtractGOF(),
     ExtractFit("fit", "fit"),
     ExtractFit("fit_asimov", "fitasimov"),
+    ExtractLimit("lim", "limit"),
+    ExtractSig("sig", "sig"),
 ]
 
 

@@ -4,6 +4,8 @@ import matplotlib.pyplot as plt
 import torch
 from matplotlib.patches import Polygon
 
+from .annots import addCMS
+
 from .plot_tools import (
     addAxesToHist,
     getPolyFromSquares,
@@ -25,6 +27,7 @@ def plotPullDists(pred, raw_test, save_func, mask=None):
     g = torch.distributions.Normal(0, 1)
     Y = torch.exp(g.log_prob(X))
     ax.plot(X, Y)
+    addCMS(ax)
 
     ax.set_xlabel(r"$\frac{N_{obs}-N_{pred}}{\sigma_{o}}$")
     ax.set_ylabel("Count")
@@ -37,6 +40,9 @@ def plotPullDists(pred, raw_test, save_func, mask=None):
     g = torch.distributions.Normal(0, 1)
     Y = torch.exp(g.log_prob(X))
     ax.plot(X, Y)
+    addCMS(ax)
+    ax.set_xlabel("$m_{\\tilde{t}}$ [GeV]")
+    ax.set_ylabel("$m_{\\tilde{\chi}} / m_{\\tilde{t}}$")
 
     ax.set_xlabel(r"$\frac{N_{obs}-N_{pred}}{\sigma_{o}}$")
     ax.set_ylabel("Count")
@@ -60,16 +66,22 @@ def makeDiagnosticPlots2D(pred, raw_test, raw_train, save_func, mask=None, **kwa
 
     fig, ax = plt.subplots(layout="tight")
     plotData(ax, raw_train, **kwargs)  # , norm=mpl.colors.LogNorm())
-    ax.set_title("Masked Inputs (Training)")
+    # ax.set_title("Masked Inputs (Training)")
     addWindow(ax)
+    addCMS(ax)
+    ax.set_xlabel("$m_{\\tilde{t}}$ [GeV]")
+    ax.set_ylabel("$m_{\\tilde{\chi}} / m_{\\tilde{t}}$")
     save_func("training_points", fig)
 
     fig, ax = plt.subplots(layout="tight")
     f = plotRaw(
         ax, raw_test.E, raw_test.X, pred_mean, **kwargs
     )  # , norm=mpl.colors.LogNorm())
-    ax.set_title("GPR Mean Prediction")
+    # ax.set_title("GPR Mean Prediction")
     addWindow(ax)
+    addCMS(ax)
+    ax.set_xlabel("$m_{\\tilde{t}}$ [GeV]")
+    ax.set_ylabel("$m_{\\tilde{\chi}} / m_{\\tilde{t}}$")
     save_func("gpr_mean", fig)
 
     fig, ax = plt.subplots(layout="tight")
@@ -80,19 +92,25 @@ def makeDiagnosticPlots2D(pred, raw_test, raw_train, save_func, mask=None, **kwa
         raw_test.Y,
         **kwargs,
     )
-    ax.set_title("Observed Outputs")
+    # ax.set_title("Observed Outputs")
     addWindow(ax)
+    addCMS(ax)
+    ax.set_xlabel("$m_{\\tilde{t}}$ [GeV]")
+    ax.set_ylabel("$m_{\\tilde{\chi}} / m_{\\tilde{t}}$")
     save_func("observed_outputs", fig)
 
     fig, ax = plt.subplots(layout="tight")
     f = plotRaw(ax, raw_test.E, raw_test.X, raw_test.V, **kwargs)
-    ax.set_title("Observed Variances")
+    # ax.set_title("Observed Variances")
     addWindow(ax)
+    addCMS(ax)
+    ax.set_xlabel("$m_{\\tilde{t}}$ [GeV]")
+    ax.set_ylabel("$m_{\\tilde{\chi}} / m_{\\tilde{t}}$")
     save_func("observed_variances", fig)
 
     fig, ax = plt.subplots(layout="tight")
     f = plotRaw(ax, raw_test.E, raw_test.X, pred.V)
-    ax.set_title("Pred Variances")
+    # ax.set_title("Pred Variances") # 
     addWindow(ax)
     save_func("predicted_variances", fig)
 
@@ -100,16 +118,22 @@ def makeDiagnosticPlots2D(pred, raw_test, raw_train, save_func, mask=None, **kwa
     f = plotRaw(
         ax, raw_test.E, raw_test.X, torch.sqrt(pred.V) / raw_test.Y, cmin=0, cmax=0.1
     )
-    ax.set_title("Relative Uncertainty (std/val)")
+    # ax.set_title("Relative Uncertainty (std/val)")
     addWindow(ax)
+    addCMS(ax)
+    ax.set_xlabel("$m_{\\tilde{t}}$ [GeV]")
+    ax.set_ylabel("$m_{\\tilde{\chi}} / m_{\\tilde{t}}$")
     save_func("relative_uncertainty", fig)
 
     fig, ax = plt.subplots(layout="tight")
     f = plotRaw(
         ax, raw_test.E, raw_test.X, torch.sqrt(raw_test.V) / raw_test.Y, **kwargs
     )
-    ax.set_title("Relative Stat Uncertainty (std/val)")
+    # ax.set_title("Relative Stat Uncertainty (std/val)")
     addWindow(ax)
+    addCMS(ax)
+    ax.set_xlabel("$m_{\\tilde{t}}$ [GeV]")
+    ax.set_ylabel("$m_{\\tilde{\chi}} / m_{\\tilde{t}}$")
     save_func("relative_stat_uncertainty", fig)
 
 
@@ -145,6 +169,9 @@ def makeCovariancePlots(model, transform, data, point, save_func):
     f = plotRaw(ax, data.E, data.X, vals)
     ax.plot([point[0]], [point[1]], "o", color="red")
     print(point)
+    addCMS(ax)
+    ax.set_xlabel("$m_{\\tilde{t}}$ [GeV]")
+    ax.set_ylabel("$m_{\\tilde{\chi}} / m_{\\tilde{t}}$")
     save_func(f"covariance_{'_'.join(map(str,point))}", fig)
 
 
@@ -161,7 +188,13 @@ def windowPlots2D(signal_data, window, save_func):
 
         figm, axm = plt.subplots()
         plotRaw(axm, signal_data.E, signal_data.X, mask.to(torch.float64))
+        addCMS(ax)
+        ax.set_xlabel("$m_{\\tilde{t}}$ [GeV]")
+        ax.set_ylabel("$m_{\\tilde{\chi}} / m_{\\tilde{t}}$")
         save_func("mask", figm)
+    addCMS(ax)
+    ax.set_xlabel("$m_{\\tilde{t}}$ [GeV]")
+    ax.set_ylabel("$m_{\\tilde{\chi}} / m_{\\tilde{t}}$")
     save_func("sig_window", fig)
 
 

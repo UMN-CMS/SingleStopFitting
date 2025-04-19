@@ -14,15 +14,16 @@ def loadOneMeta(p):
     data = metadata
     plots = {
         x.stem: str(x)
-        for x in it.chain(parent.glob("*.png"), parent.parent.glob("*.png"))
+        for x in it.chain(parent.glob("*.pdf"), parent.parent.glob("*.pdf"))
     }
-    plots["covar_center"] = next(y for x, y in plots.items() if "covariance_" in x)
+    plots["covar_center"] = next((y for x, y in plots.items() if "covariance_" in x), None )
     data = {**metadata, "plots": plots}
     return data
 
 
+
 def main():
-    d = "condor_results_2025_04_14/"
+    d = "condor_results_2025_04_17_asimov/"
     ret = defaultdict(list)
     for p in Path(d).rglob("metadata.json"):
         data = loadOneMeta(p)

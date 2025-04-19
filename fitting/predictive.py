@@ -1,6 +1,7 @@
 import numpy as np
 
 import json
+import mplhep
 import matplotlib.pyplot as plt
 from pathlib import Path
 import mplhep
@@ -11,8 +12,9 @@ import fitting.regression as regression
 import torch
 from matplotlib.patches import Polygon
 
-from .plot_tools import getPolyFromSquares, makeSquares
-from .plots import plotRaw
+from .plotting.plot_tools import getPolyFromSquares, makeSquares
+from .plotting.plots import plotRaw
+from .plotting.annots import addCMS
 from .utils import chi2Bins
 
 
@@ -81,44 +83,54 @@ def makePosteriorPred(
         )
 
     fig, ax = plt.subplots(layout="tight")
-    ax.set_title("Relative Uncertainty In Pred")
+    # ax.set_title("Relative Uncertainty In Pred")
     f = plotRaw(
         ax,
         test_data.E,
         test_data.X,
         torch.sqrt((bkg_mvn.variance)) / bkg_mvn.mean,
     )
+    ax.set_xlabel("$m_{\\tilde{t}}$ [GeV]")
+    ax.set_ylabel("$m_{\\tilde{\chi}} / m_{\\tilde{t}}$")
     addWindow(ax)
     addChi2(ax)
+    addCMS(ax)
     save_func("post_relative_uncertainty", fig)
 
     fig, ax = plt.subplots(layout="tight")
-    ax.set_title("Relative Uncertainty In Posterior")
+    # ax.set_title("Relative Uncertainty In Posterior")
     f = plotRaw(
         ax,
         test_data.E,
         test_data.X,
         summ["observed"]["std"] / bkg_mvn.mean,
     )
+    ax.set_xlabel("$m_{\\tilde{t}}$ [GeV]")
+    ax.set_ylabel("$m_{\\tilde{\chi}} / m_{\\tilde{t}}$")
     addWindow(ax)
+    addCMS(ax)
     save_func("post_posterior_relative_uncertainty", fig)
 
     fig, ax = plt.subplots(layout="tight")
     f = plotRaw(
         ax, test_data.E, test_data.X, pred_only_pulls, cmap="coolwarm", cmin=-3, cmax=3
     )
-    ax.set_title("Pull Latent Only")
+    # ax.set_title("Pull Latent Only")
     addWindow(ax)
     addChi2(ax)
+    addCMS(ax)
     save_func("post_pull_latent", fig)
 
     fig, ax = plt.subplots(layout="tight")
     f = plotRaw(
         ax, test_data.E, test_data.X, stat_pulls, cmap="coolwarm", cmin=-3, cmax=3
     )
-    ax.set_title("Pull Statistical")
+    # ax.set_title("Pull Statistical")
     addWindow(ax)
     addChi2(ax)
+    addCMS(ax)
+    ax.set_xlabel("$m_{\\tilde{t}}$ [GeV]")
+    ax.set_ylabel("$m_{\\tilde{\chi}} / m_{\\tilde{t}}$")
     save_func("post_pull_statistical", fig)
 
     fig, ax = plt.subplots(layout="tight")
@@ -126,7 +138,8 @@ def makePosteriorPred(
         ax, test_data.E, test_data.X, post_pulls, cmap="coolwarm", cmin=-3, cmax=3
     )
     addWindow(ax)
-    ax.set_title("Pull Posterior")
+    # ax.set_title("Pull Posterior")
+    addCMS(ax)
     save_func("post_pull_posterior", fig)
 
     fig, ax = plt.subplots(layout="tight")
@@ -137,13 +150,16 @@ def makePosteriorPred(
         stat_pulls - post_pulls,
         cmap="coolwarm",
     )
-    ax.set_title("Pull Stat - Pull Posterior")
+    # ax.set_title("Pull Stat - Pull Posterior")
+    addCMS(ax)
+    ax.set_xlabel("$m_{\\tilde{t}}$ [GeV]")
+    ax.set_ylabel("$m_{\\tilde{\chi}} / m_{\\tilde{t}}$")
     save_func("post_pull_diff", fig)
 
     fig, ax = plt.subplots(layout="tight")
     p = post_pulls
     ax.hist(p, bins=np.linspace(-5.0, 5.0, 21), density=True)
-    ax.set_title("Predictive Pull Distribution -- Full Plane")
+    # ax.set_title("Predictive Pull Distribution -- Full Plane")
     X = torch.linspace(-5, 5, 100)
     g = torch.distributions.Normal(0, 1)
     Y = torch.exp(g.log_prob(X))
@@ -152,6 +168,7 @@ def makePosteriorPred(
     ax.set_ylabel("Count")
     ax.legend()
     addChi2(ax)
+    addCMS(ax)
     save_func("post_global_pred_pulls_hist", fig)
 
     fig, ax = plt.subplots(layout="tight")
@@ -165,6 +182,7 @@ def makePosteriorPred(
     ax.set_xlabel(r"$\frac{N_{obs}-N_{pred}}{\sigma_{post}}$")
     addChi2(ax)
 
+    addCMS(ax)
     save_func("combo_pulls_hist", fig)
 
     global_chi2_pred = chi2Bins(bkg_mvn.mean, test_data.Y, summ["observed"]["std"])
@@ -182,31 +200,41 @@ def chi2TestStat(post_pred, obs, **kwargs):
 #     return torch.mean(post_pred, dim=-1)
 
 
+def plotPPD(ax, dist, obs):
+    import matplotlib.pyplot as plt
+    import numpy as np
+    from scipy.stats import gaussian_kde
+
+    density = gaussian_kde(dist)
+    xs = np.linspace(dist.min(), dist.max(), 200)
+    density.covariance_factor = lambda: 0.25
+    density._compute_covariance()
+    ax.plot(xs, density(xs), label="Posterior Predictive Distribution")
+    ax.axvline(obs, 0, 1, color="red", linestyle="--", alpha=0.5, label="Observed")
+    ax.legend(loc="upper right")
+    ax.set_xlabel(f"Average Pull")
+    mplhep.sort_legend(ax=ax)
+    addCMS(ax)
+
+
 def makePValuePlots(pred, all_data, train_mask, save_func, test_stat=chi2TestStat):
     import matplotlib.pyplot as plt
     import numpy as np
     from scipy.stats import gaussian_kde
 
-    pred_samples = getPosteriorPred(pred, num_samples=500)
+    pred_samples = getPosteriorPred(pred, num_samples=2000)
     post_pred = pred_samples["observed"]
     obs = all_data.Y
     dist = test_stat(post_pred, all_data).numpy()
     obs_stat = test_stat(all_data.Y, all_data).numpy()
     quantile = np.count_nonzero(dist < obs_stat) / dist.size
 
-    fig, ax = plt.subplots()
-    density = gaussian_kde(dist)
     print(
         f"Predictive dist mean/median/std: {np.mean(dist):0.4f}/{np.median(dist):0.4f}/{np.std(dist):0.4f}"
     )
     print(f"Observed data val: {obs_stat:0.4f}")
-
-    xs = np.linspace(dist.min(), dist.max(), 200)
-    density.covariance_factor = lambda: 0.25
-    density._compute_covariance()
-    ax.plot(xs, density(xs))
-    ax.axvline(obs_stat, 0, 1, color="red")
-    ax.scatter(dist, np.zeros_like(dist))
+    fig, ax = plt.subplots()
+    plotPPD(ax, dist, obs_stat)
     save_func("post_pred_density", fig)
 
     obs_blind = all_data.Y[train_mask]
@@ -224,14 +252,8 @@ def makePValuePlots(pred, all_data, train_mask, save_func, test_stat=chi2TestSta
     print(f"Observed blind data val: {obs_stat_blind:0.4f}")
     print(f"Blind quantile: {quantile_blind:0.4f}")
 
-    xs = np.linspace(dist_blind.min(), dist_blind.max(), 200)
     fig, ax = plt.subplots()
-    density = gaussian_kde(dist_blind)
-    density.covariance_factor = lambda: 0.25
-    density._compute_covariance()
-    ax.plot(xs, density(xs))
-    ax.scatter(dist_blind, np.zeros_like(dist_blind))
-    ax.axvline(obs_stat_blind, 0, 1, color="red")
+    plotPPD(ax, dist_blind, obs_stat)
     save_func("post_pred_density_blind", fig)
 
     data = {
@@ -248,6 +270,7 @@ def makePValuePlots(pred, all_data, train_mask, save_func, test_stat=chi2TestSta
             "quantile": float(quantile_blind),
         },
     }
+    addCMS(ax)
     save_func("post_pred_data", data)
 
 

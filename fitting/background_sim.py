@@ -1,5 +1,6 @@
 import pickle as pkl
 from .regression import DataValues
+import gpytorch
 import mplhep
 from .utils import chi2Bins
 from .predictive import makePosteriorPred
@@ -13,9 +14,63 @@ from .diagnostics import makeDiagnosticPlots
 from .blinder import GaussianWindow2D, MinYCut
 from .utils import dataToHist
 import hist
+import logging
+
+logger = logging.getLogger(__name__)
+torch.set_default_dtype(torch.float64)
 
 
-def makeSimulatedBackground(inhist, outdir, use_cuda=True):
+def validate(model, train, test, window_mask, train_transform):
+    import torch
+
+    model.eval()
+    with (
+        gpytorch.settings.fast_computations(
+            covar_root_decomposition=False, log_prob=False, solves=False
+        ),
+        torch.no_grad(),
+        gpytorch.settings.fast_pred_samples(state=False),
+        gpytorch.settings.fast_pred_var(state=False),
+        gpytorch.settings.lazily_evaluate_kernels(state=False),
+    ):
+        post = model(test.X)
+        post_reg = post.mean
+
+        # pred_all = model.likelihood(model(test.X[~window_mask]))
+        # pred_blind = model.likelihood(model(test.X[window_mask]))
+
+    real_y = test.Y
+    real_v = test.V
+    if hasattr(model.likelihood, "second_noise"):
+        logger.info(f"Adding extra noise {model.likelihood.second_noise}")
+        real_v += model.likelihood.second_noise
+
+    # post_reg = train_transform.transform_y.iTransformData(model(test.X).mean)
+    # real = train_transform.transform_y.iTransformData(test.Y)
+    chi2_blind_post_raw = chi2Bins(post_reg, real_y, real_v, mask=window_mask)
+    chi2_post_raw = chi2Bins(post_reg, real_y, real_v, mask=~window_mask)
+    logger.info(
+        f"Validate Chi2 (seen={chi2_post_raw:0.3f}) (blind={chi2_blind_post_raw:0.3f})"
+    )
+    # all_nlpd = gpytorch.metrics.negative_log_predictive_density(pred_all, test.Y)
+    # blind_nlpd = gpytorch.metrics.negative_log_predictive_density(
+    #     pred_blind, test.Y[window_mask]
+    # )
+    # logger.info(f"NLPD (seen={all_nlpd:0.3f}) (blind={blind_nlpd:0.3f})")
+
+    model.train()
+    return (
+        chi2_post_raw.detach(),
+        chi2_blind_post_raw.detach(),
+    )
+
+
+def makeSimulatedBackground(
+    inhist,
+    outdir,
+    use_cuda=True,
+    asimov=False,
+):
     mplhep.style.use("CMS")
     outdir = Path(outdir)
     outdir.mkdir(exist_ok=True, parents=True)
@@ -33,6 +88,7 @@ def makeSimulatedBackground(inhist, outdir, use_cuda=True):
         iterations=200,
         learn_noise=False,
         lr=0.01,
+        validate_function=validate,
     )
 
     model = regression.loadModel(trained_model)
@@ -64,9 +120,12 @@ def makeSimulatedBackground(inhist, outdir, use_cuda=True):
         print(name)
         fig.savefig((outdir / name).with_suffix(f".{ext}"))
         plt.close(fig)
+
     print(f"Expcted total is {pred_dist.mean.sum()}")
 
-    diagnostic_plots = makeDiagnosticPlots(pred_data, complete_data, complete_data, saveFunc)
+    diagnostic_plots = makeDiagnosticPlots(
+        pred_data, complete_data, complete_data, saveFunc
+    )
     makePosteriorPred(pred_dist, complete_data, saveFunc)
 
     poiss = torch.distributions.Poisson(torch.clamp(pred_dist.mean, min=0))
@@ -77,7 +136,7 @@ def makeSimulatedBackground(inhist, outdir, use_cuda=True):
     fig.savefig(outdir / f"orig.png")
     plt.close(fig)
 
-    for i in range(2):
+    for i in range(10):
         o = outdir / f"background_{i}"
         o.mkdir(exist_ok=True, parents=True)
 
@@ -87,7 +146,11 @@ def makeSimulatedBackground(inhist, outdir, use_cuda=True):
             fig.savefig((o / name).with_suffix(f".{ext}"))
             plt.close(fig)
 
-        sampled = poiss.sample()
+        if not asimov:
+            sampled = poiss.sample()
+        else:
+            sampled = torch.clamp(torch.round(pred_dist.mean), min=0)
+
         vals = dataToHist(complete_data.X, sampled, complete_data.E, sampled)
         new_hist = inhist.copy(deep=True)
         new_hist.view(flow=True).value = 0
@@ -95,6 +158,8 @@ def makeSimulatedBackground(inhist, outdir, use_cuda=True):
         new_hist.view(flow=False).value = vals.values()
         new_hist.view(flow=False).variance = vals.variances()
         ratio = new_hist.sum().value / init_sum
+        new_hist *= 1 / ratio
+
         with open(o / f"background_{i}.pkl", "wb") as f:
             pkl.dump(new_hist, f)
         fig, ax = plt.subplots()
@@ -143,7 +208,9 @@ def handleSim(args):
             pkl.dump(h, f)
 
     else:
-        makeSimulatedBackground(h, args.outdir, use_cuda=args.use_cuda)
+        makeSimulatedBackground(
+            h, args.outdir, use_cuda=args.use_cuda, asimov=args.asimov
+        )
 
 
 def addSimParser(parser):
@@ -167,6 +234,7 @@ def addSimParser(parser):
         "-y", "--y-bounds", required=True, type=coords, help="Bounds for y coordinate"
     )
     parser.add_argument("-s", "--selection", required=True, type=str, help="Selection")
+    parser.add_argument("-a", "--asimov", default=False, action="store_true")
     parser.add_argument("-n", "--name", required=True, type=str, help="Name")
     parser.add_argument("-i", "--input", required=True, type=str, help="Input")
     parser.add_argument("-u", "--use-cuda", action="store_true", default=True, help="")

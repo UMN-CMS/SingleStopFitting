@@ -12,6 +12,11 @@ base=$1
 signal=$2
 dest=$(realpath $3)
 
+function printAndRun(){
+    echo "$@"
+    $@
+}
+
 mkdir -p $dest
 (
     cd $base
@@ -24,35 +29,34 @@ ls -alhtr $dest/$signal/inject_r_1p0/
 
 echo "STARTING COMBINE"
 
+common_opts="--rMin=-5 --rMax=20 --cminDefaultMinimizerStrategy 1 --cminFallbackAlgo Minuit2,Migrad,0:0.1 --cminFallbackAlgo Minuit2,Migrad,1:1.0 --cminFallbackAlgo Minuit2,Migrad,0:1.0 --X-rtd MINIMIZER_MaxCalls=999999999 --X-rtd MINIMIZER_analytic  --X-rtd FAST_VERTICAL_MORPH"
 
 # combineTool.py -M T2W -d $dest/$signal/*/datacard.txt  
-text2workspace.py $dest/$signal/inject_r_0p0/datacard.txt
-text2workspace.py $dest/$signal/inject_r_1p0/datacard.txt
-text2workspace.py $dest/$signal/inject_r_4p0/datacard.txt
-text2workspace.py $dest/$signal/inject_r_9p0/datacard.txt
-text2workspace.py $dest/$signal/inject_r_16p0/datacard.txt
 
-combineTool.py -M Significance -d $dest/$signal/inject_r_1p0/datacard.root  --there -n .sig  --robustFit=1
-combineTool.py -M MultiDimFit -d $dest/$signal/inject_r_1p0/datacard.root  --there -n .fit   --robustFit=1
 
-combineTool.py -M Significance -d $dest/$signal/inject_r_4p0/datacard.root  --there -n .sig --robustFit=1
-combineTool.py -M MultiDimFit -d $dest/$signal/inject_r_4p0/datacard.root  --there -n .fit --robustFit=1
+function runSignal(){
+    local base=$dest/$signal/inject_r_$1p0/
+    printAndRun text2workspace.py $base/datacard.txt -o $base/datacard.root
+    printAndRun combineTool.py -M Significance -d $base/datacard.root  --there -n .sig $common_opts > $base/sig.log
+    printAndRun combineTool.py -M MultiDimFit -d $base/datacard.root  --there -n .fit  $common_opts  > $base/fit.log
+}
 
-combineTool.py -M Significance -d $dest/$signal/inject_r_9p0/datacard.root  --there -n .sig --robustFit=1
-combineTool.py -M MultiDimFit -d $dest/$signal/inject_r_9p0/datacard.root  --there -n .fit --robustFit=1
+function runNoInject(){
+    local base=$dest/$signal/inject_r_0p0/
+    printAndRun text2workspace.py $base/datacard.txt -o $base/datacard.root
+    printAndRun combineTool.py -M AsymptoticLimits -d $base/datacard.root  --there -n .limasimov  -t -1   $common_opts > $base/limasimov.log
+    printAndRun combineTool.py -M AsymptoticLimits -d $base/datacard.root  --there -n .lim -t -1 $common_opts > $base/lim.log
+    printAndRun combineTool.py -M MultiDimFit -d      $base/datacard.root  --there -n .fit  $common_opts > $base/fit.log
+    # combineTool.py -M GoodnessOfFit -d $dest/$signal/inject_r_0p0/datacard.root  --there -n .gof_toys --algo KS -t 500 --rMin=-5 --rMax=20
+    # combineTool.py -M GoodnessOfFit -d $dest/$signal/inject_r_0p0/datacard.root  --there -n .gof_obs --algo KS  --rMin=-5 --rMax=20
+    # combineTool.py -M CollectGoodnessOfFit --input *.gof_toys* *.gof_obs* -m 125.0 -o gof.json 
+}
 
-combineTool.py -M Significance -d $dest/$signal/inject_r_16p0/datacard.root  --there -n .sig  --robustFit=1
-combineTool.py -M MultiDimFit -d $dest/$signal/inject_r_16p0/datacard.root  --there -n .fit  --robustFit=1
-
-combineTool.py -M AsymptoticLimits -d $dest/$signal/inject_r_0p0/datacard.root  --there -n .limasimov  -t -1  --robustFit=1
-combineTool.py -M AsymptoticLimits -d $dest/$signal/inject_r_0p0/datacard.root  --there -n .lim -t -1 --robustFit=1
-combineTool.py -M MultiDimFit -d $dest/$signal/inject_r_0p0/datacard.root  --there -n .fitasimov -t -1 --robustFit=1
-combineTool.py -M MultiDimFit -d $dest/$signal/inject_r_0p0/datacard.root  --there -n .fit --robustFit=1
-
-combineTool.py -M GoodnessOfFit -d $dest/$signal/inject_r_0p0/datacard.root  --there -n .gof_toys --algo KS -t 1000 
-combineTool.py -M GoodnessOfFit -d $dest/$signal/inject_r_0p0/datacard.root  --there -n .gof_obs --algo KS 
-combineTool.py -M CollectGoodnessOfFit --input *.gof_toys* *.gof_obs* -m 125.0 -o gof.json
-
+runSignal 1
+runSignal 4
+runSignal 9
+runSignal 16
+runNoInject
 
 
 echo "DONE WITH COMBINE"

@@ -27,7 +27,10 @@ from .utils import dataToHist, computePosterior, chi2Bins
 logger = logging.getLogger(__name__)
 
 min_noise = 1e-10
-max_noise = 1e-3
+max_noise = 1e-7
+
+# min_noise = 1e-20
+# max_noise = 1e-10
 
 
 @dataclass
@@ -370,8 +373,8 @@ def doCompleteRegression(
     all_data = DataValues.fromHistogram(histogram)
     domain_mask = domain_blinder(all_data.X, all_data.Y)
 
-    logger.info(f"Setting min gaussian likelihood to 5")
-    all_data.V = torch.clamp(all_data.V, min=5)
+    logger.info(f"Setting min gaussian likelihood to 3")
+    all_data.V = torch.clamp(all_data.V, min=3)
 
     test_data = all_data[domain_mask]
     if window_blinder is not None:

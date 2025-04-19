@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-background_dir="backgrounds/background_2025_03_29"
+background_dir="backgrounds/background_2025_04_16_asimov"
 
 low=500,1700
 med=800,2200
@@ -16,39 +16,40 @@ function printAndRun(){
     $@
 }
 
+extras="--asimov"
 
 rebin=2
 printAndRun \
 python3 -m fitting.cli bkg-smooth -n qcd_inclusive_2018 -o $background_dir/Signal312/low_uncomp -s Signal312 \
     -i export_hists/qcd_inclusive_2018/Signal312/uncomp_0p67_m14_vs_mChiRatio.pkl \
-    -x $low -y 0.0,0.9 --use-cuda --rebin $rebin
+    -x $low -y 0.0,0.9 --use-cuda --rebin $rebin  $extras
 
 printAndRun \
 python3 -m fitting.cli bkg-smooth -n qcd_inclusive_2018 -o $background_dir/Signal312/med_uncomp -s Signal312 \
     -i export_hists/qcd_inclusive_2018/Signal312/uncomp_0p67_m14_vs_mChiRatio.pkl \
-    -x $med -y 0.0,0.9 --use-cuda --rebin $rebin
+    -x $med -y 0.0,0.9 --use-cuda --rebin $rebin $extras
 
 printAndRun \
 python3 -m fitting.cli bkg-smooth -n qcd_inclusive_2018 -o $background_dir/Signal312/high_uncomp -s Signal312 \
     -i export_hists/qcd_inclusive_2018/Signal312/uncomp_0p67_m14_vs_mChiRatio.pkl \
-    -x $high -y 0.0,0.9 --use-cuda --rebin $rebin
+    -x $high -y 0.0,0.9 --use-cuda --rebin $rebin $extras
 
 
 rebin=1
 printAndRun \
 python3 -m fitting.cli bkg-smooth -n qcd_inclusive_2018 -o $background_dir/Signal312/low_comp -s Signal312 \
     -i export_hists/qcd_inclusive_2018/Signal312/comp_0p67_m14_vs_mChiRatio.pkl \
-    -x $low -y 0.85,1.0 --use-cuda --rebin $rebin
+    -x $low -y 0.85,1.0 --use-cuda --rebin $rebin $extras
 
 printAndRun \
 python3 -m fitting.cli bkg-smooth -n qcd_inclusive_2018 -o $background_dir/Signal312/med_comp -s Signal312 \
     -i export_hists/qcd_inclusive_2018/Signal312/comp_0p67_m14_vs_mChiRatio.pkl \
-    -x $med -y 0.85,1.0 --use-cuda --rebin $rebin
+    -x $med -y 0.85,1.0 --use-cuda --rebin $rebin $extras
 
 printAndRun \
 python3 -m fitting.cli bkg-smooth -n qcd_inclusive_2018 -o $background_dir/Signal312/high_comp -s Signal312 \
     -i export_hists/qcd_inclusive_2018/Signal312/comp_0p67_m14_vs_mChiRatio.pkl \
-    -x $high -y 0.85,1.0 --use-cuda --rebin $rebin
+    -x $high -y 0.85,1.0 --use-cuda --rebin $rebin $extras
 
 
 ###############################
@@ -63,31 +64,31 @@ rebin=2
 printAndRun \
 python3 -m fitting.cli bkg-smooth -n qcd_inclusive_2018 -o $background_dir/Signal313/low_uncomp -s Signal313 \
     -i export_hists/qcd_inclusive_2018/Signal313/uncomp_0p67_m14_vs_mChiRatio.pkl \
-    -x $low -y 0.0,0.9 --use-cuda --rebin $rebin
+    -x $low -y 0.0,0.9 --use-cuda --rebin $rebin $extras
 
 printAndRun \
 python3 -m fitting.cli bkg-smooth -n qcd_inclusive_2018 -o $background_dir/Signal313/med_uncomp -s Signal313 \
     -i export_hists/qcd_inclusive_2018/Signal313/uncomp_0p67_m14_vs_mChiRatio.pkl \
-    -x $med -y 0.0,0.9 --use-cuda --rebin $rebin
+    -x $med -y 0.0,0.9 --use-cuda --rebin $rebin $extras
 
 printAndRun \
 python3 -m fitting.cli bkg-smooth -n qcd_inclusive_2018 -o $background_dir/Signal313/high_uncomp -s Signal313 \
     -i export_hists/qcd_inclusive_2018/Signal313/uncomp_0p67_m14_vs_mChiRatio.pkl \
-    -x $high -y 0.0,0.9 --use-cuda --rebin $rebin
+    -x $high -y 0.0,0.9 --use-cuda --rebin $rebin $extras
 
 
 rebin=1
 printAndRun \
 python3 -m fitting.cli bkg-smooth -n qcd_inclusive_2018 -o $background_dir/Signal313/low_comp -s Signal313 \
     -i export_hists/qcd_inclusive_2018/Signal313/comp_0p67_m14_vs_mChiRatio.pkl \
-    -x $low -y 0.85,1.0 --use-cuda --rebin $rebin
+    -x $low -y 0.85,1.0 --use-cuda --rebin $rebin $extras
 
 printAndRun \
 python3 -m fitting.cli bkg-smooth -n qcd_inclusive_2018 -o $background_dir/Signal313/med_comp -s Signal313 \
     -i export_hists/qcd_inclusive_2018/Signal313/comp_0p67_m14_vs_mChiRatio.pkl \
-    -x $med -y 0.85,1.0 --use-cuda --rebin $rebin
+    -x $med -y 0.85,1.0 --use-cuda --rebin $rebin $extras
 
 printAndRun \
 python3 -m fitting.cli bkg-smooth -n qcd_inclusive_2018 -o $background_dir/Signal313/high_comp -s Signal313 \
     -i export_hists/qcd_inclusive_2018/Signal313/comp_0p67_m14_vs_mChiRatio.pkl \
-    -x $high -y 0.85,1.0 --use-cuda --rebin $rebin
+    -x $high -y 0.85,1.0 --use-cuda --rebin $rebin $extras

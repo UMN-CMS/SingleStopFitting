@@ -1,6 +1,7 @@
 import argparse
 import json
 import logging
+import gpytorch
 import pickle as pkl
 from pathlib import Path
 
@@ -37,9 +38,26 @@ def validate(model, train, test, window_mask, train_transform):
     import torch
 
     model.eval()
-    post_reg = model(test.X).mean
+    with (
+        gpytorch.settings.fast_computations(
+            covar_root_decomposition=False, log_prob=False, solves=False
+        ),
+        torch.no_grad(),
+        gpytorch.settings.fast_pred_samples(state=False),
+        gpytorch.settings.fast_pred_var(state=False),
+        gpytorch.settings.lazily_evaluate_kernels(state=False),
+    ):
+        post = model(test.X)
+        post_reg = post.mean
+
+        pred_all = model.likelihood(model(test.X[~window_mask]))
+        pred_blind = model.likelihood(model(test.X[window_mask]))
+
     real_y = test.Y
     real_v = test.V
+    if hasattr(model.likelihood, "second_noise"):
+        logger.info(f"Adding extra noise {model.likelihood.second_noise}")
+        real_v += model.likelihood.second_noise
 
     # post_reg = train_transform.transform_y.iTransformData(model(test.X).mean)
     # real = train_transform.transform_y.iTransformData(test.Y)
@@ -48,6 +66,11 @@ def validate(model, train, test, window_mask, train_transform):
     logger.info(
         f"Validate Chi2 (seen={chi2_post_raw:0.3f}) (blind={chi2_blind_post_raw:0.3f})"
     )
+    # all_nlpd = gpytorch.metrics.negative_log_predictive_density(pred_all, test.Y)
+    # blind_nlpd = gpytorch.metrics.negative_log_predictive_density(
+    #     pred_blind, test.Y[window_mask]
+    # )
+    # logger.info(f"NLPD (seen={all_nlpd:0.3f}) (blind={blind_nlpd:0.3f})")
 
     model.train()
     return (
@@ -191,6 +214,7 @@ def estimateSingle2D(
     rebin_signal=1,
     scale_background=None,
     min_base_variance=None,
+    extra_metadata=None,
     **kwargs,
 ):
     base_dir = Path(base_dir)
@@ -225,6 +249,10 @@ def estimateSingle2D(
     a1_min, a1_max = a1.edges.min() + 0.000001, a1.edges.max()
     a2_min, a2_max = a2.edges.min() + 0.000001, a2.edges.max()
     signal_hist = signal_file[signal_name, signal_selection]["hist"]
+
+    signal_params = signal_file[signal_name, signal_selection]["params"]
+    extra_metadata = extra_metadata or {}
+    extra_metadata["signal_params"] = signal_params
 
     sig_bin_size = np.mean(np.diff(signal_hist.axes[0].centers))
     logger.info(f"Signal bin size is {sig_bin_size}")
@@ -269,6 +297,7 @@ def estimateSingle2D(
             window,
             base_dir,
             rebin_signal=rebin_signal,
+            extra_metadata=extra_metadata,
             **kwargs,
         )
     else:

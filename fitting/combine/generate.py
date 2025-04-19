@@ -1,6 +1,7 @@
 import logging
 import json
 from pathlib import Path
+from fitting.plotting.plot_tools import plotRaw
 
 import argparse
 import numpy as np
@@ -24,7 +25,29 @@ def tensorToHist(array):
     return hist
 
 
-def createHists(obs, pred, signal_data, root_file, sig_percent=0.0):
+def saveVariation(X, Y, E, name, save_dir):
+    import matplotlib.pyplot as plt
+    import mplhep
+
+    save_dir = Path(save_dir)
+    save_dir.mkdir(exist_ok=True, parents=True)
+
+    fig, ax = plt.subplots()
+    plotRaw(ax, E, X, Y)
+    # mplhep.hist2dplot(ax=ax)
+    fig.savefig(save_dir / f"{name}.png")
+    plt.close(fig)
+
+
+def createHists(
+    obs,
+    pred,
+    signal_data,
+    root_file,
+    sig_percent=0.0,
+    save_n_variations=None,
+    save_dir=None,
+):
     cov_mat = pred.covariance_matrix
     mean = pred.mean
     vals, vecs = getScaledEigenvecs(cov_mat)
@@ -39,8 +62,35 @@ def createHists(obs, pred, signal_data, root_file, sig_percent=0.0):
     for i, (va, ve) in enumerate(zip(good_vals, good_vecs)):
         v = torch.sqrt(va)
         # print(f"Magnitude is {torch.abs(v).max()}")
-        h_up = tensorToHist(torch.clip(mean + v * ve, min=0, max=None))
-        h_down = tensorToHist(torch.clip(mean - v * ve, min=0, max=None))
+
+        var = v * ve
+        raw_h_up = torch.clip(mean + var, min=0, max=None)
+        raw_h_down = torch.clip(mean - var, min=0, max=None)
+        h_up = tensorToHist(raw_h_up)
+        h_down = tensorToHist(raw_h_down)
+
+        if save_n_variations is not None and i < save_n_variations:
+            saveVariation(
+                signal_data.X,
+                var,
+                signal_data.E,
+                f"VAR_{i}",
+                save_dir=save_dir,
+            )
+            # saveVariation(
+            #     signal_data.X,
+            #     raw_h_up,
+            #     signal_data.E,
+            #     f"EVAR_{i}_UP",
+            #     save_dir=save_dir,
+            # )
+            # saveVariation(
+            #     signal_data.X,
+            #     raw_h_down,
+            #     signal_data.E,
+            #     f"EVAR_{i}_DOWN",
+            #     save_dir=save_dir,
+            # )
 
         root_file[f"bkg_estimate_EVAR_{i}Up"] = h_up
         root_file[f"bkg_estimate_EVAR_{i}Down"] = h_down
@@ -55,7 +105,15 @@ def createDatacard(obs, pred, signal_data, output_dir, signal_meta=None):
     root_path = output_dir / "histograms.root"
     root_file = uproot.recreate(root_path)
 
-    nz = createHists(obs, pred, signal_data, root_file, 0.01)
+    nz = createHists(
+        obs,
+        pred,
+        signal_data,
+        root_file,
+        0.05,
+        save_n_variations=10,
+        save_dir=output_dir / "evars",
+    )
 
     card = DataCard()
 

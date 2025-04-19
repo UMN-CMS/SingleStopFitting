@@ -20,30 +20,50 @@ def extractProperty(path, p):
         return {p: None}
 
 
-def groupFiles(files):
+def groupFiles(files, cut=None):
     ret = defaultdict(list)
     for f in files:
         f = Path(f)
         parts = f.parts
+        if "uncomp" in str(f):
+            algo = "uncomp"
+        else:
+            algo = "comp"
+
         signal_part = next(x for x in parts if "signal_" in x)
         _, coupling, mt, mx = signal_part.split("_")
-        ret[(coupling, mt, mx)].append(f)
+        if int(mx) < 300:
+            continue
+        ret[(coupling, int(mt), int(mx))].append(
+            {"signal": (coupling, int(mt), int(mx)), "algo": algo, "file": f}
+        )
     return ret
 
 
-def getBestFile(signal_files, pat):
-    return {
-        s: sorted(f, key=lambda x: not bool(re.search(pat, str(x))))[0]
-        for s, f in signal_files.items()
-    }
+def getBestFile(signal_files, algo=None, cut=None):
+    ret = {}
+    print(signal_files)
+    for k, v in signal_files.items():
+        if algo:
+            ret[k] = next((x for x in v if x["algo"] == algo), v[0])
+        elif cut:
+            use = "comp" if k[2] / k[1] > cut else "uncomp"
+            ret[k] = next(x for x in v if x["algo"] == use)
+    return ret
 
 
 def parseArguments():
     parser = argparse.ArgumentParser(description="")
     parser.add_argument("-o", "--output", default="-")
     parser.add_argument(
-        "-f", "--favor", type=str, help="Factor signals matching pattern"
+        "-a", "--algo", type=str, help="Factor signals matching pattern"
     )
+    parser.add_argument(
+        "-c",
+        "--cut",
+        type=float,
+    )
+    parser.add_argument("-k", "--key", type=str)
     parser.add_argument("inputs", nargs="+")
     return parser.parse_args()
 
@@ -51,8 +71,11 @@ def parseArguments():
 def main():
     args = parseArguments()
     file_groups = groupFiles(args.inputs)
-    files = getBestFile(file_groups, args.favor)
-    res = [{"signal": s, "props": extractProperty(p, "r")} for s, p in files.items()]
+    files = getBestFile(file_groups, algo=args.algo, cut=args.cut)
+    res = [
+        {"signal": s, "algo": p["algo"], "props": extractProperty(p["file"], args.key)}
+        for s, p in files.items()
+    ]
     if args.output == "-":
         json.dump(res, sys.stdout, indent=2)
     else:
