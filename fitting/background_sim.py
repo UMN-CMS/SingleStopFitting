@@ -136,7 +136,7 @@ def makeSimulatedBackground(
     fig.savefig(outdir / f"orig.png")
     plt.close(fig)
 
-    for i in range(10):
+    for i in range(20):
         o = outdir / f"background_{i}"
         o.mkdir(exist_ok=True, parents=True)
 
