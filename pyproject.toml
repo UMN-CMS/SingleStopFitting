@@ -12,13 +12,16 @@ hist = "^2.6.3"
 matplotlib = "^3.7"
 jupyter = "*"
 pyyaml = "^6.0"
-# gpytorch  = ">=1.11"
-# pyro-ppl = "*"
+gpytorch  = ">=1.11"
+pyro-ppl = "*"
 # numpyro = {version="*", extras=["cuda12"]} 
 # numpyro = {version="*", extras=["cuda"]} 
 # numexpr = ">=2.8.4"
 # argcomplete='^3.4.0'
-#mplhep = "*"
+mplhep = "*"
+uproot = "*"
+scipy = "*"
+pydantic = "*"
 
 [tool.poetry.group.dev.dependencies]
 black = "^23.3.0"
