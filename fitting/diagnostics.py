@@ -222,3 +222,4 @@ def addEigensToParser(parser):
     )
     parser.add_argument("input")
     parser.set_defaults(func=runEigens)
+    return parser

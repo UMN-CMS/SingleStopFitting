@@ -53,8 +53,8 @@ function create_venv(){
     
     trap 'rm -rf -- "$TMPDIR"' EXIT
 
-    # python3 -m venv --system-site-packages "$virtual_env_path"
-    python3 -m venv "$virtual_env_path"
+    python3 -m venv --system-site-packages "$virtual_env_path"
+    # python3 -m venv "$virtual_env_path"
     activate_venv 
 
     printf "Created virtual environment %s\n" "$env_path"

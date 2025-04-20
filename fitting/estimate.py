@@ -39,19 +39,32 @@ def validate(model, train, test, window_mask, train_transform):
 
     model.eval()
     with (
+        torch.no_grad(),
         gpytorch.settings.fast_computations(
             covar_root_decomposition=False, log_prob=False, solves=False
         ),
-        torch.no_grad(),
         gpytorch.settings.fast_pred_samples(state=False),
         gpytorch.settings.fast_pred_var(state=False),
-        gpytorch.settings.lazily_evaluate_kernels(state=False),
+        gpytorch.settings.lazily_evaluate_kernels(state=True),
+        gpytorch.settings.max_cholesky_size(1200),
+        # gpytorch.settings.max_eager_kernel_size(1200),
+        gpytorch.settings.linalg_dtypes(
+            default=torch.float64, symeig=torch.float64, cholesky=torch.float64
+        ),
     ):
         post = model(test.X)
         post_reg = post.mean
 
-        pred_all = model.likelihood(model(test.X[~window_mask]))
-        pred_blind = model.likelihood(model(test.X[window_mask]))
+        with gpytorch.settings.min_fixed_noise(double_value=1e-8):
+            likelihood = gpytorch.likelihoods.FixedNoiseGaussianLikelihood(
+                noise=test.V[~window_mask] + model.likelihood.second_noise
+            )
+            pred_unblind = likelihood(model(test.X[~window_mask]))
+        with gpytorch.settings.min_fixed_noise(double_value=1e-8):
+            likelihood = gpytorch.likelihoods.FixedNoiseGaussianLikelihood(
+                noise=test.V[window_mask] + model.likelihood.second_noise
+            )
+            pred_blind = likelihood(model(test.X[window_mask]))
 
     real_y = test.Y
     real_v = test.V
@@ -66,11 +79,11 @@ def validate(model, train, test, window_mask, train_transform):
     logger.info(
         f"Validate Chi2 (seen={chi2_post_raw:0.3f}) (blind={chi2_blind_post_raw:0.3f})"
     )
-    # all_nlpd = gpytorch.metrics.negative_log_predictive_density(pred_all, test.Y)
-    # blind_nlpd = gpytorch.metrics.negative_log_predictive_density(
-    #     pred_blind, test.Y[window_mask]
-    # )
-    # logger.info(f"NLPD (seen={all_nlpd:0.3f}) (blind={blind_nlpd:0.3f})")
+    unblind_nlpd = gpytorch.metrics.negative_log_predictive_density(pred_unblind, test.Y[~window_mask])
+    blind_nlpd = gpytorch.metrics.negative_log_predictive_density(
+        pred_blind, test.Y[window_mask]
+    )
+    logger.info(f"NLPD (seen={unblind_nlpd:0.3f}) (blind={blind_nlpd:0.3f})")
 
     model.train()
     return (

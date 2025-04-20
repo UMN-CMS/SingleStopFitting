@@ -24,13 +24,20 @@ import torch
 from . import transformations
 from .utils import dataToHist, computePosterior, chi2Bins
 
+torch.set_default_dtype(torch.float64)
+
 logger = logging.getLogger(__name__)
+
+# min_noise = 1e-20
+# max_noise = 1e-7
+
+# min_noise = 1e-20
+# max_noise = 1e-10
 
 min_noise = 1e-10
 max_noise = 1e-7
 
-# min_noise = 1e-20
-# max_noise = 1e-10
+min_fixed_noise=1e-7
 
 
 @dataclass
@@ -79,7 +86,9 @@ def loadModel(trained_model, other_data=None):
     normalized_all_data = transform.transform(all_data)
 
     logger.info(f"Loading model, learned noise is {trained_model.learned_noise}")
-    likelihood = gpytorch.likelihoods.FixedNoiseGaussianLikelihood(
+
+    with gpytorch.settings.min_fixed_noise(double_value=min_fixed_noise):
+        likelihood = gpytorch.likelihoods.FixedNoiseGaussianLikelihood(
         noise=normalized_blinded_data.V,
         learn_additional_noise=trained_model.learned_noise,
         noise_constraint=gpytorch.constraints.Interval(min_noise, max_noise),
@@ -241,29 +250,29 @@ def optimizeHyperparams(
         "parameters": [],
     }
 
-    # with linear_operator.settings.max_cg_iterations(10):
-    for i in range(iterations):
-        optimizer.zero_grad()
-        output = model(train_data.X)
-        loss = -mll(output, train_data.Y)
-        loss.backward()
-        optimizer.step()
-        # scheduler.step()
-        # slr = scheduler.get_last_lr()[0]
-        if validate_function is not None and False:
-            c2u, c2b = validate_function(model)
-            training_progress["chi2_unblind"].append(c2u.detach())
-            training_progress["chi2_blind"].append(c2b.detach())
-        if (i % (iterations // 20) == 0) or i == iterations - 1:
-            logger.info(f"Iter {i} (lr={lr:0.4f}): Loss={round(loss.item(),4)}")
-            # for n, k in model.named_parameters():
-            #     logger.info(f"{n}: {k}")
-            c2u, c2b = validate_function(model)
-        torch.cuda.empty_cache()
-        training_progress["loss"].append(loss.detach())
-        training_progress["parameters"].append(
-            dict((x, y.detach()) for x, y in model.named_parameters())
-        )
+    with linear_operator.settings.max_cg_iterations(5000):
+        for i in range(iterations):
+            optimizer.zero_grad()
+            output = model(train_data.X)
+            loss = -mll(output, train_data.Y)
+            loss.backward()
+            optimizer.step()
+            # scheduler.step()
+            # slr = scheduler.get_last_lr()[0]
+            if validate_function is not None and False:
+                c2u, c2b = validate_function(model)
+                training_progress["chi2_unblind"].append(c2u.detach())
+                training_progress["chi2_blind"].append(c2b.detach())
+            if (i % (iterations // 20) == 0) or i == iterations - 1:
+                logger.info(f"Iter {i} (lr={lr:0.4f}): Loss={round(loss.item(),4)}")
+                # for n, k in model.named_parameters():
+                #     logger.info(f"{n}: {k}")
+                c2u, c2b = validate_function(model)
+            torch.cuda.empty_cache()
+            training_progress["loss"].append(loss.detach())
+            training_progress["parameters"].append(
+                dict((x, y.detach()) for x, y in model.named_parameters())
+            )
 
     vars = globals()
     vars.update(locals())
@@ -333,7 +342,8 @@ def updateModelNewData(
     train = normalized_train_data
     norm_test = normalized_test_data
 
-    likelihood = gpytorch.likelihoods.FixedNoiseGaussianLikelihood(
+    with gpytorch.settings.min_fixed_noise(double_value=min_fixed_noise):
+        likelihood = gpytorch.likelihoods.FixedNoiseGaussianLikelihood(
         noise=train.V,
         learn_additional_noise=learn_noise,
         noise_constraint=gpytorch.constraints.Interval(min_noise, max_noise),
@@ -403,11 +413,14 @@ def doCompleteRegression(
     # logger.info(train.Y)
     # logger.info(train.V)
     logger.info(f"Learn additional noise is: {learn_noise}")
-    likelihood = gpytorch.likelihoods.FixedNoiseGaussianLikelihood(
-        noise=train.V,
-        learn_additional_noise=learn_noise,
-        noise_constraint=gpytorch.constraints.Interval(min_noise, max_noise),
-    )
+    with gpytorch.settings.min_fixed_noise(double_value=min_fixed_noise):
+        likelihood = gpytorch.likelihoods.FixedNoiseGaussianLikelihood(
+            noise=train.V,
+            learn_additional_noise=learn_noise,
+            noise_constraint=gpytorch.constraints.Interval(min_noise, max_noise),
+        )
+
+    logger.info(f"Some Variances are {train.V[::10]}")
 
     # likelihood = gpytorch.likelihoods.GaussianLikelihood()
 

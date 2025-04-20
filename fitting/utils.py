@@ -115,7 +115,7 @@ def fixCovar(mat):
 def computePosterior(
     model, likelihood, data, slope=None, intercept=None, extra_noise=None
 ):
-    # model.eval()
+    model.eval()
     with (
         torch.no_grad(),
         gpytorch.settings.fast_computations(
@@ -123,11 +123,15 @@ def computePosterior(
         ),
         gpytorch.settings.fast_pred_samples(state=False),
         gpytorch.settings.fast_pred_var(state=False),
-        gpytorch.settings.lazily_evaluate_kernels(state=False),
+        gpytorch.settings.lazily_evaluate_kernels(state=True),
+        gpytorch.settings.max_cholesky_size(1200),
+        # gpytorch.settings.max_eager_kernel_size(1200),
+        gpytorch.settings.linalg_dtypes(
+            default=torch.float64, symeig=torch.float64, cholesky=torch.float64
+        ),
     ):
         pred_dist = model(data.X)
-
-    pred_dist = fixMVN(pred_dist)
+        pred_dist = fixMVN(pred_dist)
     # logger.info(f"Initial Transfomed variances are {pred_dist.variance * slope**2}")
 
     # vars = globals()
@@ -141,7 +145,7 @@ def computePosterior(
 
     # logger.info(f"Initial mean is {pred_dist.mean * slope}")
     if extra_noise is not None:
-        en = extra_noise 
+        en = extra_noise
         new_cov = torch.diag(torch.ones(pred_dist.variance.size(0)) * en).detach()
         logger.info(f"Adding extra noise to covariance {torch.sqrt(en*slope**2)}")
         pred_dist = gpytorch.distributions.MultivariateNormal(
