@@ -285,12 +285,30 @@ class MyNNRBFModel2D(gpytorch.models.ExactGP):
         # base_covar_module = SK(NNRBFKernel(idim=2, odim=2, layer_sizes=(8, 4))) * SK(
         #     gpytorch.kernels.MaternKernel(ard_num_dims=2)
         # )
-        base_covar_module = SK(NNRBFKernel(idim=2, odim=2, layer_sizes=(8, 4))) * SK(
-            WrapLinear(gpytorch.kernels.MaternKernel(ard_num_dims=2, mu=2.5))
-        )
+
+        # base_covar_module = (
+        #     SK(NNRBFKernel(idim=2, odim=2, layer_sizes=(4, 4, 4)))
+        #     * SK(gpytorch.kernels.MaternKernel(ard_num_dims=2, mu=0.5))
+        #     # * SK(NNRBFKernel(idim=2, odim=2, layer_sizes=(2, 2, 2)))
+        # )
+        # 
+        # base_covar_module = (
+        #     SK(NNRBFKernel(idim=2, odim=2, layer_sizes=(4, 4, 4)))
+        #     * SK(NNMaternKernel(idim=2, odim=2, layer_sizes=(2, 2, 2), mu=0.5))
+        #     # * SK(NNRBFKernel(idim=2, odim=2, layer_sizes=(2, 2, 2)))
+        # )
+        # base_covar_module = (
+        #     SK(NNRQKernel(idim=2, odim=2, layer_sizes=(2,8,2)))
+        #     * SK(WrapLinear(gpytorch.kernels.MaternKernel(ard_num_dims=2, mu=0.5)))
+        #     # * SK(NNRBFKernel(idim=2, odim=2, layer_sizes=(2, 2, 2)))
+        # ) 
+        # base_covar_module = SK(NNRBFKernel(idim=2, odim=2, layer_sizes=(8, 4)))
+        # base_covar_module = SK(NNRBFKernel(idim=2, odim=2, layer_sizes=(16, 4))) * SK(
+        #     gpytorch.kernels.MaternKernel(ard_num_dims=2, mu=0.5)
+        # )
         # base_covar_module = SK(gpytorch.kernels.RBFKernel(ard_num_dims=2))
 
-        # base_covar_module = SK(NNRBFKernel(idim=2, odim=2, layer_sizes=(10, 8, 5))) * SK(
+        # base_covar_module = SK(NNRBFKernel(idim=2, odim=2, layer_sizes=(16, 8))) * SK(
         #     WrapLinear(gpytorch.kernels.MaternKernel(ard_num_dims=2, mu=2.5))
         # )
 
@@ -309,11 +327,30 @@ class MyNNRBFModel2D(gpytorch.models.ExactGP):
         # base_covar_module = SK(NNRBFKernel(idim=2, odim=2, layer_sizes=(8, 4))) * SK(
         #     gpytorch.kernels.MaternKernel(idim=2, odim=2, mu=0.5)
         # )
-        # base_covar_module = SK(NNMaternKernel(idim=2, odim=2, layer_sizes=(8, 4))) * SK(
-        #     NNRBFKernel(idim=2, odim=2, layer_sizes=(8, 4))
+        ################# GOOOOODD
+        ################# GOOOOODD
+        ################# GOOOOODD
+        base_covar_module = (
+            SK(NNMaternKernel(idim=2, odim=2, layer_sizes=(15,10,5)))
+        )
+        ################# GOOOOODD
+        
+        base_covar_module = (
+            SK(NNMaternKernel(idim=2, odim=2, layer_sizes=(10,5)))
+        )
+        # base_covar_module = SK(gpytorch.kernels.RBFKernel(ard_num_dims=2))
+        ################# GOOOOODD
+        #
+            # SK(NNRBFKernel(idim=2, odim=2, layer_sizes=(16, 10)))
+            # * SK(WrapLinear(gpytorch.kernels.MaternKernel(ard_num_dims=2, mu=0.5)))
+            # * SK(NNRBFKernel(idim=2, odim=2, layer_sizes=(2, 2, 2)))
+
+        # base_covar_module = SK(NNMaternKernel(idim=2, odim=2, layer_sizes=(8, 4))) + SK(
+        #     NNRBFKernel(idim=2, odim=2, layer_sizes=(4, 3))
         # )
         #
         # base_covar_module = SK(WrapLinear(gpytorch.kernels.RBFKernel(ard_num_dims=2)))
+        # base_covar_module = SK(gpytorch.kernels.MaternKernel(ard_num_dims=2), mu=1.5)
         # base_covar_module = SK(
         #     NNRBFKernel(idim=2, odim=2, layer_sizes=(8, 4)) ) * SK(
         #     * gpytorch.kernels.MaternKernel(idim=2, odim=2, mu=1.5)

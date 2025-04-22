@@ -28,16 +28,16 @@ torch.set_default_dtype(torch.float64)
 
 logger = logging.getLogger(__name__)
 
-# min_noise = 1e-20
-# max_noise = 1e-7
+min_noise = 1e-10
+max_noise = 5e-6
 
 # min_noise = 1e-20
 # max_noise = 1e-10
 
-min_noise = 1e-10
-max_noise = 1e-7
+# min_noise = 1e-10
+# max_noise = 1e-6
 
-min_fixed_noise=1e-7
+min_fixed_noise=1e-9
 
 
 @dataclass

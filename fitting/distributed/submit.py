@@ -21,15 +21,20 @@ def generateConfigFiles(configs, outdir="temp"):
     outdir.mkdir(exist_ok=True, parents=True)
 
 
-def submitConfigs(output_dir, env_path=None, needs_files=None):
+def submitConfigs(
+    exec_file=None,
+    output_dir=None,
+    env_path=None,
+    needs_files=None,
+    image="/cvmfs/unpacked.cern.ch/registry.hub.docker.com/cmsml/cmsml:3.11-cuda",
+):
     log_dir = Path("logs")
     log_dir = log_dir / getNow()
     log_dir.mkdir(parents=True)
 
-    exec_file = ""
-    hostname_job = htcondor.Submit(
+    job = htcondor.Submit(
         {
-            "+SingularityImage": "/cvmfs/unpacked.cern.ch/registry.hub.docker.com/cmsml/cmsml:3.11-cuda",
+            "+SingularityImage": image,
             "executable": exec_file,
             "output": str(log_dir / "$(cluster)-$(process).out"),
             "error": str(log_dir / "$(cluster)-$(process).err"),
@@ -44,3 +49,4 @@ def submitConfigs(output_dir, env_path=None, needs_files=None):
             "when_to_transfer_output": "ON_EXIT",
         }
     )
+    print(job)

@@ -123,7 +123,10 @@ class ExtractSig(object):
         self.name = name
         self.tag = tag
 
-    def __call__(self, directory):
+    def __call__(self, directory, for_inject=None):
+        if for_inject is not None:
+            if for_inject not in directory:
+                return None
         directory = Path(directory)
         f = directory / f"higgsCombine.{self.tag}.Significance.mH120.root"
         logger.info(f"Attempting to load fit from {f}")
@@ -136,6 +139,37 @@ class ExtractSig(object):
         else:
             val = None
         return val
+
+
+class ExtractSigInject(object):
+    def __init__(self, name, tag, vals=(1, 4, 9, 16), for_inject=None):
+        self.name = name
+        self.tag = tag
+        self.vals = vals
+        self.for_inject = for_inject
+
+    def __call__(self, directory):
+        if self.for_inject is not None and self.for_inject not in str(directory):
+            return None
+        directory = Path(directory)
+        ret = []
+        for v in self.vals:
+            t = self.tag + str(v)
+            f = directory / f"higgsCombine.{t}.Significance.mH120.root"
+            logger.info(f"Attempting to load fit from {f}")
+            if not f.exists():
+                logger.info(f"Failed to load significance from {f}")
+                val= None
+            else:
+                val = extractProperty(f, "limit")
+            logger.info(f)
+            logger.info(val)
+            if val:
+                val = val[0]
+            else:
+                val = None
+            ret.append((v, val))
+        return ret
 
 
 class ExtractLimit(object):
@@ -165,6 +199,7 @@ combine_extractors = [
     ExtractFit("fit_asimov", "fitasimov"),
     ExtractLimit("lim", "limit"),
     ExtractSig("sig", "sig"),
+    ExtractSigInject("sig_inject", "sig", for_inject="0p0"),
 ]
 
 

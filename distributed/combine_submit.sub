@@ -13,8 +13,8 @@ stream_error=true
 stream_output=true
 
 
-OUTDIR=condor_combine_results_2025_04_18_asimov
-INDIR=condor_results_2025_04_17_asimov
+OUTDIR=condor_combine_results_2025_04_22_matern_spread
+INDIR=condor_results_2025_04_22_matern_spread
 
 should_transfer_files = YES
 when_to_transfer_output = ON_EXIT

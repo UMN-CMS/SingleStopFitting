@@ -6,127 +6,8 @@ from pathlib import Path
 import matplotlib
 import mplhep
 import numpy as np
+from rich import print
 from scipy.interpolate import griddata
-
-
-def tryGet(obj, idx):
-    try:
-        return obj[idx]
-    except IndexError as e:
-        return None
-
-
-def plotSig(data, output_path, coupling="312"):
-    mplhep.style.use("CMS")
-
-    output_path = Path(output_path)
-    output_path.parent.mkdir(exist_ok=True, parents=True)
-
-    xyz = [
-        [x["signal"][1], x["signal"][2], tryGet(x["props"]["limit"], -1)]
-        for x in data
-        if x["signal"][0] == coupling
-    ]
-
-    points = [[x, y] for x, y, z in xyz]
-    values = [z for x, y, z in xyz]
-    print(points)
-
-    grid_x, grid_y = np.mgrid[1000:2000:25, 100:2000:25]
-    mask = grid_x > grid_y
-    print(mask.shape)
-    # grid_x,grid_y = grid_x[mask], grid_y[mask]
-    # grid_z = griddata(points, values, (grid_x, grid_y), method='linear')
-    # # grid_x,grid_y,grid_z= grid_x[mask], grid_y[mask], grid_z[mask]
-    # grid_z[~mask]  = np.nan
-    fig, ax = plt.subplots()
-    ax.set_xlabel(r"$m_{\tilde{t}}$")
-    ax.set_ylabel(r"$m_{\tilde{\chi}}$")
-    # pm = ax.pcolormesh(grid_x, grid_y, grid_z, shading="nearest")
-    c = ax.scatter(
-        [x[0] for x in points],
-        [x[1] for x in points],
-        c=values,
-        s=400,
-        # norm=matplotlib.colors.LogNorm(),
-    )
-    cb = fig.colorbar(c, ax=ax)
-    cb.set_label(r"Psuedodata Observed Significance")
-    fig.savefig(output_path)
-
-
-def plotSigCompare(data1, data2, output_path, coupling="312"):
-    mplhep.style.use("CMS")
-
-    output_path = Path(output_path)
-    output_path.parent.mkdir(exist_ok=True, parents=True)
-
-    xyz1 = {
-        (int(x["signal"][1]), int(x["signal"][2])): tryGet(x["props"]["limit"], -1)
-        for x in data1
-        if x["signal"][0] == coupling
-    }
-
-    xyz2 = {
-        (int(x["signal"][1]), int(x["signal"][2])): tryGet(x["props"]["limit"], -1)
-        for x in data2
-        if x["signal"][0] == coupling
-    }
-
-    xyz = [[*k, xyz1[k] / xyz2[k] if xyz2[k] > 0 else -1] for k in xyz1]
-
-    points = [[x, y] for x, y, z in xyz]
-    values = [z for x, y, z in xyz]
-    print(points)
-
-    grid_x, grid_y = np.mgrid[1000:2000:25, 100:2000:25]
-    mask = grid_x > grid_y
-    print(mask.shape)
-    # grid_x,grid_y = grid_x[mask], grid_y[mask]
-    # grid_z = griddata(points, values, (grid_x, grid_y), method='linear')
-    # # grid_x,grid_y,grid_z= grid_x[mask], grid_y[mask], grid_z[mask]
-    # grid_z[~mask]  = np.nan
-    fig, ax = plt.subplots()
-    ax.set_xlabel(r"$m_{\tilde{t}}$")
-    ax.set_ylabel(r"$m_{\tilde{\chi}}$")
-    # pm = ax.pcolormesh(grid_x, grid_y, grid_z, shading="nearest")
-    c = ax.scatter(
-        [x[0] for x in points],
-        [x[1] for x in points],
-        c=values,
-        s=400,
-        # norm=matplotlib.colors.LogNorm(),
-    )
-    cb = fig.colorbar(c, ax=ax)
-    cb.set_label(r"Significance Ratio Comp/Uncomp")
-    fig.savefig(output_path)
-
-
-def parseAguments():
-    parser = argparse.ArgumentParser(description="make plot")
-    parser.add_argument("-o", "--output", required=True, type=str, help="")
-    parser.add_argument("-c", "--coupling", type=str, help="", default="312")
-    parser.add_argument("-2", "--input2", default=None, type=str, help="")
-    parser.add_argument("input")
-
-    return parser.parse_args()
-
-
-def main():
-    args = parseAguments()
-    with open(args.input) as f:
-        data = json.load(f)
-
-    if args.input2 is None:
-        plotSig(data, args.output, coupling=args.coupling)
-    else:
-        with open(args.input2) as f:
-            data2 = json.load(f)
-        plotSigCompare(data, data2, args.output, coupling=args.coupling)
-
-
-if __name__ == "__main__":
-    main()
 
 import json
 
@@ -147,63 +28,44 @@ def formatSignal(sid):
     return f"$\lambda''_{{{sid.coupling}}}({sid.mt},{sid.mx})$ {sid.algo}"
 
 
-def plotRates(data, signal_ids, output_path, coupling="312"):
-    data = {
-        signal_id: np.array(
-            sorted(
-                [
-                    (x["signal_injected"], x["fit"]["r"])
-                    for x in data[signal_id]["injections"]
-                ]
-            )
-        )
-        for signal_id in signal_ids
-    }
-    print(data)
-
-    mplhep.style.use("CMS")
-
-    # output_path = Path(output_path)
-    # output_path.parent.mkdir(exist_ok=True, parents=True)
-    #
-    # xyz = [
-    #     [x["signal"][1], x["signal"][2], tryGet(x["props"]["r"], 0)]
-    #     for x in data
-    #     if x["signal"][0] == coupling
-    # ]
-    #
-    # points = [[x, y] for x, y, z in xyz]
-    # values = [z for x, y, z in xyz]
-    # print(points)
-    #
-    # grid_x, grid_y = np.mgrid[1000:2000:25, 100:2000:25]
-    # mask = grid_x > grid_y
-    # print(mask.shape)
-    # # grid_x,grid_y = grid_x[mask], grid_y[mask]
-    # # grid_z = griddata(points, values, (grid_x, grid_y), method='linear')
-    # # # grid_x,grid_y,grid_z= grid_x[mask], grid_y[mask], grid_z[mask]
-    # # grid_z[~mask]  = np.nan
-    # fig, ax = plt.subplots()
-    # ax.set_xlabel(r"$m_{\tilde{t}}$")
-    # ax.set_ylabel(r"$m_{\tilde{\chi}}$")
-    # pm = ax.pcolormesh(grid_x, grid_y, grid_z, shading="nearest")
-    # c = ax.scatter(
-    #     [x[0] for x in points],
-    #     [x[1] for x in points],
-    #     c=values,
-    #     s=400,
-    #     # norm=matplotlib.colors.LogNorm(),
-    # )
-    # cb = fig.colorbar(c, ax=ax)
-    # cb.set_label(r"Psuedodata Observed Rate")
-
+def plotSig(data, output_path, coupling="312"):
+    data = np.array([[*x, y] for x, y in data.items()])
     fig, ax = plt.subplots()
-    for title, points in data.items():
-        ax.plot(points[:, 0], points[:, 1], label=formatSignal(title))
-    ax.legend()
-    ax.set_xlabel("Signal Injected (Relative to $\lambda_{31j}''=0.1$)")
-    ax.set_ylabel("Signal Extracted")
-    addCMS(ax)
+    c = ax.scatter(data[:, 0], data[:, 1], c=data[:, 2], s=400)
+    cb = fig.colorbar(c, ax=ax)
+    cb.set_label(r"Significance")
+    ax.set_xlabel(r"$m_{\tilde{t}}$")
+    ax.set_ylabel(r"$m_{\tilde{\chi}}$")
+    addCMS(ax, loc=1)
+
+    fig.savefig(output_path)
+
+
+def extractSigs(d, points, coupling="312", injection=1.0):
+    ret = {
+        (signal_id.mt, signal_id.mx): next(
+            (x for x in d[signal_id]["injections"] if 
+            x["signal_injected"] == injection
+            and signal_id.coupling == coupling)
+            , {"sig":None}).get("sig")
+        for signal_id in points
+    }
+    return ret
+
+
+def plotSigRatio(data, output_path, coupling="312"):
+    data = np.array([[*x, y] for x, y in data.items()])
+    fig, ax = plt.subplots()
+    c = ax.scatter(data[:, 0], data[:, 1], c=data[:, 2], s=800, vmin=0, vmax=2)
+    cb = fig.colorbar(c, ax=ax)
+    cb.set_label(r"Significance Ratio")
+    ax.set_xlabel(r"$m_{\tilde{t}}$")
+    ax.set_ylabel(r"$m_{\tilde{\chi}}$")
+    addCMS(ax, loc=1)
+
+    for x,y,z in data:
+        if z is not None:
+            ax.text(x,y, f"{z:0.2f}", ha="center",size=8)
 
     fig.savefig(output_path)
 
@@ -218,10 +80,10 @@ def parseAguments():
 
 
 def main():
+    mplhep.style.use("CMS")
     # args = parseAguments()
     # with open(args.input) as f:
     #     data = json.load(f)
-
     # plotRate(data, args.output, coupling=args.coupling)
     with open("gathered.json", "r") as f:
         data = json.load(f)
@@ -236,17 +98,38 @@ def main():
         SignalId("comp", "312", 1500, 1450),
         # SignalId("comp", "312", 2000, 1900),
     ]
-    # data[SignalId("uncomp", "312", "1200", "400")]
-    plotRates(data, points, "deletemelater/312rates.png")
-    points = [
-        SignalId("uncomp", "313", 1000, 400),
-        SignalId("uncomp", "313", 1500, 600),
-        SignalId("uncomp", "313", 2000, 600),
-        SignalId("comp", "313", 2000, 1900),
-        SignalId("comp", "313", 1500, 1400),
-        # SignalId("comp", "312", 2000, 1900),
-    ]
-    plotRates(data, points, "deletemelater/313rates.png")
+    points_uncomp = [d for d in data if d.algo == "uncomp" and d.mx != 100]
+    sigs_uncomp = extractSigs(data, points_uncomp, injection=1.0)
+
+    plotSig(sigs_uncomp, "deletemelater/312sig_uncomp.png")
+    points_comp = [d for d in data if d.algo == "comp" and d.mx != 100]
+
+    sigs_comp = extractSigs(data, points_comp, injection=1.0)
+    plotSig(sigs_comp, "deletemelater/312sig_comp.png")
+
+    data = {
+        x: (
+            y / sigs_comp[x]
+            if (
+                x in sigs_comp
+                and y is not None
+                and sigs_comp[x] is not None
+                and sigs_comp[x] > 0
+            )
+            else None
+        )
+        for x, y in sigs_uncomp.items()
+    }
+    plotSigRatio(data, "deletemelater/312sig_ratio.png")
+    # points = [
+    #     SignalId("uncomp", "313", 1000, 400),
+    #     SignalId("uncomp", "313", 1500, 600),
+    #     SignalId("uncomp", "313", 2000, 600),
+    #     SignalId("comp", "313", 2000, 1900),
+    #     SignalId("comp", "313", 1500, 1400),
+    #     # SignalId("comp", "312", 2000, 1900),
+    # ]
+    # plotRates(data, points, "deletemelater/313rates.png")
 
 
 if __name__ == "__main__":

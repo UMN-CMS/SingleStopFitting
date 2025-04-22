@@ -1,7 +1,7 @@
 import mplhep
 
 
-def addCMS(ax, text=""):
+def addCMS(ax, text="", loc=0):
     if text is not None:
         text = "\n" + text
     mplhep.cms.label(
@@ -11,5 +11,5 @@ def addCMS(ax, text=""):
         lumi=59.8,
         # energy=13,
         ax=ax,
-        loc=0,
+        loc=loc,
     )
