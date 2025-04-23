@@ -23,7 +23,7 @@ def loadOneMeta(p):
 
 
 def main():
-    d = "condor_results_2025_04_22/"
+    d = "condor_results_2025_04_22_control"
     ret = defaultdict(list)
     for p in Path(d).rglob("metadata.json"):
         data = loadOneMeta(p)

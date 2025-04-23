@@ -13,9 +13,8 @@ stream_error=true
 stream_output=true
 
 
-
-OUTDIR=condor_combine_results_2025_04_22_matern_spread
-INDIR=condor_results_2025_04_22_matern_spread
+OUTDIR=condor_combine_results_2025_04_22_control
+INDIR=condor_results_2025_04_22_control
 
 should_transfer_files = YES
 when_to_transfer_output = ON_EXIT
@@ -25,5 +24,5 @@ preserve_relative_paths = true
 
 arguments= $(INDIR) $(SIGNAL_NAME)/$(SUB_SIG_PATH) $(OUTDIR) 
 
-queue SIGNAL_NAME, IGNORE0, SUB_SIG_PATH, IGNORE1, IGNORE2 from inputs.txt
+queue SIGNAL_NAME, IGNORE0, SUB_SIG_PATH, IGNORE1, IGNORE2 from control_inputs.txt
 
