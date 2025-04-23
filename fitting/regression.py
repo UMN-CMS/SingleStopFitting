@@ -37,7 +37,7 @@ max_noise = 5e-6
 # min_noise = 1e-10
 # max_noise = 1e-6
 
-min_fixed_noise=1e-9
+min_fixed_noise = 1e-9
 
 
 @dataclass
@@ -89,10 +89,10 @@ def loadModel(trained_model, other_data=None):
 
     with gpytorch.settings.min_fixed_noise(double_value=min_fixed_noise):
         likelihood = gpytorch.likelihoods.FixedNoiseGaussianLikelihood(
-        noise=normalized_blinded_data.V,
-        learn_additional_noise=trained_model.learned_noise,
-        noise_constraint=gpytorch.constraints.Interval(min_noise, max_noise),
-    )
+            noise=normalized_blinded_data.V,
+            learn_additional_noise=trained_model.learned_noise,
+            noise_constraint=gpytorch.constraints.Interval(min_noise, max_noise),
+        )
 
     inducing = model_state.get("covar_module.inducing_points")
     if inducing is not None:
@@ -116,8 +116,9 @@ def loadModel(trained_model, other_data=None):
     return model
 
 
-def getPosteriorProcess(model, data, transform, extra_noise=None):
+def getPosteriorProcess(model, data, transform):
     normalized_data = transform.transform(data)
+    extra_noise = getattr(model.likelihood, "second_noise", None)
     pred_dist = computePosterior(
         model,
         model.likelihood,
@@ -126,23 +127,6 @@ def getPosteriorProcess(model, data, transform, extra_noise=None):
         intercept=transform.transform_y.intercept,
         extra_noise=extra_noise,
     )
-    # logger.info(pred_dist.variance)
-    # if extra_noise is not None:
-    #     en = transform.transform_y.iTransformVariances(extra_noise)
-    #     # en = extra_noise
-    #     # logger.info(
-    #     #     f"Extra noise is {transform.transform_y.iTransformVariances(extra_noise)}"
-    #     # )
-    #     logger.info(f"Extra noise is {en}")
-    #     new_cov = torch.diag(torch.ones(pred_dist.variance.size(0)) * en).detach()
-    #     to_add = gpytorch.distributions.MultivariateNormal(
-    #         torch.zeros_like(pred_dist.mean).detach(), torch.sqrt(new_cov)
-    #     )
-    #     # pred_dist = gpytorch.distributions.MultivariateNormal(
-    #     #     pred_dist.mean, pred_dist.covariance_matrix + new_cov
-    #     # )
-    #     # pred_dist += to_add
-    # logger.info(pred_dist.variance)
     return pred_dist
 
 
@@ -344,10 +328,10 @@ def updateModelNewData(
 
     with gpytorch.settings.min_fixed_noise(double_value=min_fixed_noise):
         likelihood = gpytorch.likelihoods.FixedNoiseGaussianLikelihood(
-        noise=train.V,
-        learn_additional_noise=learn_noise,
-        noise_constraint=gpytorch.constraints.Interval(min_noise, max_noise),
-    )
+            noise=train.V,
+            learn_additional_noise=learn_noise,
+            noise_constraint=gpytorch.constraints.Interval(min_noise, max_noise),
+        )
     model.set_train_data(train.X, train.Y, strict=False)
     model.likelhood = likelihood
 

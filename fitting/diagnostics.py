@@ -24,12 +24,12 @@ def plotDiagnostics(save_dir, trained_model, **kwargs):
     mt, mx = float(mt), float(mx)
     all_data, train_mask = regression.getModelingData(trained_model)
     extra_noise = None
-    if trained_model.learned_noise:
-        extra_noise = model.likelihood.second_noise
+    # if trained_model.learned_noise:
+    #     extra_noise = model.likelihood.second_noise
     logger.info(f"Diagonstics: extra noise is {extra_noise}")
 
     pred_dist = regression.getPosteriorProcess(
-        model, all_data, trained_model.transform, extra_noise=extra_noise
+        model, all_data, trained_model.transform  # , extra_noise=extra_noise
     )
 
     pred_data = DataValues(all_data.X, pred_dist.mean, pred_dist.variance, all_data.E)
@@ -65,7 +65,6 @@ def plotDiagnostics(save_dir, trained_model, **kwargs):
             print(name)
             obj.savefig((save_dir / name).with_suffix(f".{ext}"))
             plt.close(obj)
-
 
     diagnostic_plots = makeDiagnosticPlots(
         pred_data,
