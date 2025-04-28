@@ -2,7 +2,9 @@ import jinja2
 import os
 from jinja2 import Template
 
-latex_jinja_env = jinja2.Environment(
+
+def getEnv():
+    latex_jinja_env = jinja2.Environment(
     block_start_string="\JB{",
     block_end_string="}",
     variable_start_string="\JV{",
@@ -15,8 +17,9 @@ latex_jinja_env = jinja2.Environment(
     autoescape=False,
     loader=jinja2.FileSystemLoader(os.path.abspath("./templates")),
 )
-
+    return latex_jinja_env
 
 def renderTemplate(template_name, data):
-    template = latex_jinja_env.get_template(template_name)
+    env = getEnv()
+    template = env.get_template(template_name)
     return template.render(**data)
