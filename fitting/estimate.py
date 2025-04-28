@@ -12,7 +12,7 @@ from .regression import DataValues
 
 import hist
 import matplotlib as mpl
-from .utils import chi2Bins
+from .utils import chi2Bins, computePosterior, dataToHist
 import matplotlib.pyplot as plt
 import mplhep
 import torch
@@ -20,6 +20,7 @@ import torch
 from . import models, regression
 from .blinder import GaussianWindow2D, MinYCut
 from .plotting.plots import windowPlots2D
+
 
 torch.set_default_dtype(torch.float64)
 
@@ -53,6 +54,15 @@ def validate(model, train, test, window_mask, train_transform):
         ),
     ):
         post = model(test.X)
+
+        extra_noise = None
+        if model.likelihood.second_noise_covar is not None:
+            extra_noise = model.likelihood.second_noise
+
+        full_post = computePosterior(
+            model, model.likelihood, test, extra_noise=extra_noise
+        )
+
         post_reg = post.mean
 
         with gpytorch.settings.min_fixed_noise(double_value=1e-8):
@@ -70,16 +80,24 @@ def validate(model, train, test, window_mask, train_transform):
     real_v = test.V
     if hasattr(model.likelihood, "second_noise"):
         logger.info(f"Adding extra noise {model.likelihood.second_noise}")
-        real_v += model.likelihood.second_noise
+        pred_v = full_post.variance
 
     # post_reg = train_transform.transform_y.iTransformData(model(test.X).mean)
     # real = train_transform.transform_y.iTransformData(test.Y)
     chi2_blind_post_raw = chi2Bins(post_reg, real_y, real_v, mask=window_mask)
     chi2_post_raw = chi2Bins(post_reg, real_y, real_v, mask=~window_mask)
     logger.info(
-        f"Validate Chi2 (seen={chi2_post_raw:0.3f}) (blind={chi2_blind_post_raw:0.3f})"
+        f"Validate Statistical Chi2 (seen={chi2_post_raw:0.3f}) (blind={chi2_blind_post_raw:0.3f})"
     )
-    unblind_nlpd = gpytorch.metrics.negative_log_predictive_density(pred_unblind, test.Y[~window_mask])
+
+    chi2_blind_pred_raw = chi2Bins(post_reg, real_y, pred_v, mask=window_mask)
+    chi2_pred_raw = chi2Bins(post_reg, real_y, pred_v, mask=~window_mask)
+    logger.info(
+        f"Validate Predictive Chi2 (seen={chi2_pred_raw:0.3f}) (blind={chi2_blind_pred_raw:0.3f})"
+    )
+    unblind_nlpd = gpytorch.metrics.negative_log_predictive_density(
+        pred_unblind, test.Y[~window_mask]
+    )
     blind_nlpd = gpytorch.metrics.negative_log_predictive_density(
         pred_blind, test.Y[window_mask]
     )
@@ -139,17 +157,13 @@ def estimateSingle2DWithWindow(
     use_other_model=None,
     use_other_kernel=None,
     extra_metadata=None,
+    no_contamination=False,
 ):
     extra_metadata = extra_metadata or {}
     signal_injections = signal_injections or [0.0, 1.0, 4.0, 16.0]
     sig_dir = base_dir  # / signal_name
     sig_dir.mkdir(exist_ok=True, parents=True)
     signal_regression_data = DataValues.fromHistogram(signal_hist)
-    sd = dict(
-        signal_data=signal_regression_data,
-        signal_hist=signal_hist,
-        signal_name=signal_name,
-    )
 
     print(bkg_hist)
     print(signal_hist)
@@ -159,7 +173,22 @@ def estimateSingle2DWithWindow(
         fig.savefig((sig_dir / name).with_suffix(f".{ext}"))
         plt.close(fig)
 
+    if no_contamination:
+        window_mask = window(signal_regression_data.X)
+        logger.warn(f"Removing signal bins outside blinded window")
+        signal_regression_data.Y[~window_mask] = 0
+        h = signal_regression_data.toHist()
+        signal_hist.view(flow=False).value = h.values()
+        signal_hist.view(flow=False).variance = h.variances()
+
+    sd = dict(
+        signal_data=signal_regression_data,
+        signal_hist=signal_hist,
+        signal_name=signal_name,
+    )
+
     windowPlots2D(signal_regression_data, window, saveFunc)
+
     torch.save(sd, sig_dir / "signal_data.pth")
     _, coupling, stop, chi = signal_name.split("_")
     model_data = {
@@ -401,6 +430,7 @@ def main(args):
         use_other_model=other_model,
         inject_other_signals=args.inject_other_signals,
         extra_metadata=extra_metadata,
+        no_contamination=args.no_contamination,
     )
 
 
@@ -429,6 +459,12 @@ def addToParser(parser):
     parser.add_argument("--injected", type=float, nargs="*", default=[0.0])
     parser.add_argument("-i", "--iterations", type=int, default=100)
     parser.add_argument("--cuda", action="store_true", help="Use cuda", default=False)
+    parser.add_argument(
+        "--no-contamination",
+        action="store_true",
+        help="Remove any signal outside of blinding window",
+        default=False,
+    )
     parser.add_argument("--spread", type=float, default=1.5)
     parser.add_argument("--inject-other-signals", default=None, type=str, nargs="*")
     parser.add_argument("--metadata", default=None, type=str, nargs="*")
