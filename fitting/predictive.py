@@ -191,9 +191,14 @@ def makePosteriorPred(
     return data
 
 
-def chi2TestStat(post_pred, obs, **kwargs):
+def chiTestStat(post_pred, obs, **kwargs):
     # return post_pred.mean(dim=-1)
     return chi2Bins(post_pred, obs.Y, obs.V, min_var=1, power=1)
+
+
+def chi2PredTest(mean, variance, obs, **kwargs):
+    # return post_pred.mean(dim=-1)
+    return chi2Bins(mean, obs, variance, min_var=1)
 
 
 # def chi2TestStat(post_pred, obs, **kwargs):
@@ -212,21 +217,25 @@ def plotPPD(ax, dist, obs):
     ax.plot(xs, density(xs), label="Posterior Predictive Distribution")
     ax.axvline(obs, 0, 1, color="red", linestyle="--", alpha=0.5, label="Observed")
     ax.legend(loc="upper right")
-    ax.set_xlabel(f"Average Pull")
+    ax.set_xlabel(f"")
+
+    ax.set_xlabel(r"$\frac{(x-x_{pred})^2}{\sigma_{pred}^2}$")
     mplhep.sort_legend(ax=ax)
     addCMS(ax)
 
 
-def makePValuePlots(pred, all_data, train_mask, save_func, test_stat=chi2TestStat):
+def makePValuePlots(pred, all_data, train_mask, save_func, test_stat=chi2PredTest):
     import matplotlib.pyplot as plt
     import numpy as np
     from scipy.stats import gaussian_kde
 
+    print(pred)
+
     pred_samples = getPosteriorPred(pred, num_samples=2000)
     post_pred = pred_samples["observed"]
     obs = all_data.Y
-    dist = test_stat(post_pred, all_data).numpy()
-    obs_stat = test_stat(all_data.Y, all_data).numpy()
+    dist = test_stat(pred.mean, pred.variance, post_pred).numpy()
+    obs_stat = test_stat(pred.mean, pred.variance, all_data.Y).numpy()
     quantile = np.count_nonzero(dist < obs_stat) / dist.size
 
     print(
@@ -239,10 +248,14 @@ def makePValuePlots(pred, all_data, train_mask, save_func, test_stat=chi2TestSta
 
     obs_blind = all_data.Y[train_mask]
     dist_blind = test_stat(
-        post_pred[:, train_mask], all_data.getMasked(train_mask)
+        pred.mean[train_mask],
+        pred.variance[train_mask],
+        post_pred[:, train_mask],
     ).numpy()
     obs_stat_blind = test_stat(
-        all_data.Y[train_mask], all_data.getMasked(train_mask)
+        pred.mean[train_mask],
+        pred.variance[train_mask],
+        all_data.Y[train_mask],
     ).numpy()
     quantile_blind = np.count_nonzero(dist_blind < obs_stat_blind) / dist_blind.size
 
