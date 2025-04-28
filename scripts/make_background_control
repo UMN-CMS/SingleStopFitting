@@ -1,10 +1,15 @@
 #!/usr/bin/env bash
 
-background_dir="backgrounds/control_background_2025_03_29"
+background_dir="backgrounds/control_background_2025_04_23"
 
-low=500,1500
-med=1000,2000
-high=1500,2500
+
+# low=500,1500
+# med=1000,2000
+# high=1500,2500
+
+low=500,1700
+med=800,2200
+high=1300,2700
 
 # low=500,1500
 # med=1000,2000
@@ -17,7 +22,7 @@ function printAndRun(){
 }
 
 
-rebin=1
+rebin=2
 printAndRun \
 python3 -m fitting.cli bkg-smooth -n data_JetHT_2018 -o $background_dir/Control/low_uncomp -s Control \
     -i export_hists/data_JetHT_2018/Control/uncomp_0p67_m14_vs_mChiRatio.pkl \
@@ -34,21 +39,21 @@ python3 -m fitting.cli bkg-smooth -n data_JetHT_2018 -o $background_dir/Control/
     -x $high -y 0.0,0.75 --use-cuda --rebin $rebin --only-clip
 
 
-rebin=1
+rebin=2
 printAndRun \
 python3 -m fitting.cli bkg-smooth -n data_JetHT_2018 -o $background_dir/Control/low_comp -s Control \
     -i export_hists/data_JetHT_2018/Control/comp_0p67_m14_vs_mChiRatio.pkl \
-    -x $low -y 0.85,1.0 --use-cuda --rebin $rebin --only-clip
+    -x $low -y 0.4,1.0 --use-cuda --rebin $rebin --only-clip
 
 printAndRun \
 python3 -m fitting.cli bkg-smooth -n data_JetHT_2018 -o $background_dir/Control/med_comp -s Control \
     -i export_hists/data_JetHT_2018/Control/comp_0p67_m14_vs_mChiRatio.pkl \
-    -x $med -y 0.85,1.0 --use-cuda --rebin $rebin --only-clip
+    -x $med -y 0.4,1.0 --use-cuda --rebin $rebin --only-clip
 
 printAndRun \
 python3 -m fitting.cli bkg-smooth -n data_JetHT_2018 -o $background_dir/Control/high_comp -s Control \
     -i export_hists/data_JetHT_2018/Control/comp_0p67_m14_vs_mChiRatio.pkl \
-    -x $high -y 0.85,1.0 --use-cuda --rebin $rebin --only-clip
+    -x $high -y 0.4,1.0 --use-cuda --rebin $rebin --only-clip
 
 
 ###############################
@@ -58,7 +63,7 @@ python3 -m fitting.cli bkg-smooth -n data_JetHT_2018 -o $background_dir/Control/
 # # low=0,100000
 # # med=0,100000
 # # high=0,100000
-rebin=1
+rebin=2
 
 printAndRun \
 python3 -m fitting.cli bkg-smooth -n data_JetHT_2018 -o $background_dir/Control/low_uncomp -s Control \
@@ -76,18 +81,18 @@ python3 -m fitting.cli bkg-smooth -n data_JetHT_2018 -o $background_dir/Control/
     -x $high -y 0.0,0.75 --use-cuda --rebin $rebin --only-clip
 
 
-rebin=1
+rebin=2
 printAndRun \
 python3 -m fitting.cli bkg-smooth -n data_JetHT_2018 -o $background_dir/Control/low_comp -s Control \
     -i export_hists/data_JetHT_2018/Control/comp_0p67_m14_vs_mChiRatio.pkl \
-    -x $low -y 0.85,1.0 --use-cuda --rebin $rebin --only-clip
+    -x $low -y 0.4,1.0 --use-cuda --rebin $rebin --only-clip
 
 printAndRun \
 python3 -m fitting.cli bkg-smooth -n data_JetHT_2018 -o $background_dir/Control/med_comp -s Control \
     -i export_hists/data_JetHT_2018/Control/comp_0p67_m14_vs_mChiRatio.pkl \
-    -x $med -y 0.85,1.0 --use-cuda --rebin $rebin --only-clip
+    -x $med -y 0.4,1.0 --use-cuda --rebin $rebin --only-clip
 
 printAndRun \
 python3 -m fitting.cli bkg-smooth -n data_JetHT_2018 -o $background_dir/Control/high_comp -s Control \
     -i export_hists/data_JetHT_2018/Control/comp_0p67_m14_vs_mChiRatio.pkl \
-    -x $high -y 0.85,1.0 --use-cuda --rebin $rebin --only-clip
+    -x $high -y 0.4,1.0 --use-cuda --rebin $rebin --only-clip

@@ -146,8 +146,14 @@ def computePosterior(
     # logger.info(f"Initial mean is {pred_dist.mean * slope}")
     if extra_noise is not None:
         en = extra_noise
-        new_cov = torch.diag(torch.ones(pred_dist.variance.size(0)) * en).detach()
-        logger.info(f"Adding extra noise to covariance {torch.sqrt(en*slope**2)}")
+        new_cov = torch.diag(
+            torch.ones(pred_dist.variance.size(0)).to(en.device) * en
+        ).detach()
+        logger.info(f"Adding extra variance {en}")
+        if slope:
+            logger.info(
+                f"Adding extra noise is approx std of  {torch.sqrt(en*slope**2)} events"
+            )
         pred_dist = gpytorch.distributions.MultivariateNormal(
             pred_dist.mean, pred_dist.covariance_matrix + new_cov
         )

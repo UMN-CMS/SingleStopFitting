@@ -49,12 +49,13 @@ def createHists(
     save_dir=None,
 ):
     cov_mat = pred.covariance_matrix
-    mean = pred.mean
+    mean = torch.clip(pred.mean, min=0, max=None)
     vals, vecs = getScaledEigenvecs(cov_mat)
     root_file["bkg_estimate"] = tensorToHist(mean)
     root_file["signal"] = tensorToHist(signal_data.Y)
     root_file["data_obs"] = tensorToHist(obs.Y)
-    wanted = torch.sqrt(vals) >= torch.sqrt(vals[0]) * sig_percent
+    print(vals)
+    wanted = vals >= vals[0] * sig_percent
     nz = int(torch.count_nonzero(wanted))
     print(f"There are {nz} egeinvariations at least {sig_percent} of the max ")
     good_vals, good_vecs = vals[wanted], vecs[wanted]

@@ -268,122 +268,13 @@ class MyNNRBFModel2D(gpytorch.models.ExactGP):
 
         # base_covar_module = SK(gpytorch.kernels.RBFKernel(ard_num_dims=2))
         # base_covar_module = SK(gpytorch.kernels.RQKernel(ard_num_dims=2))
-        # base_covar_module = SK(gpytorch.kernels.MaternKernel(ard_num_dims=2), mu=2.5)
-        # base_covar_module = SK(
-        #     gpytorch.kernels.RBFKernel(ard_num_dims=2),
-        #     outputscale_constraint=gpytorch.constraints.Interval(0.2, 1.0),
-        # ) + SK(
-        #     NNRBFKernel(idim=2, odim=2, layer_sizes=(16, 8)),
-        #     outputscale_constraint=gpytorch.constraints.Interval(0.2, 1.0),
-        # )
-        # base_covar_module = gpytorch.kernels.SpectralMixtureKernel(
-        #     num_mixtures=4, ard_num_dims=2
-        # )
-        # base_covar_module.to(train_x.device)
-        # base_covar_module.initialize_from_data(train_x, train_y)
-        # base_covar_module = SK(NNRBFKernel(idim=2, odim=2, layer_sizes=(8,4))) + SK(NNRBFKernel(idim=2, odim=2, layer_sizes=(8,4)))
-        # base_covar_module = SK(NNRBFKernel(idim=2, odim=2, layer_sizes=(8, 4))) * SK(
-        #     gpytorch.kernels.MaternKernel(ard_num_dims=2)
-        # )
 
-        # base_covar_module = (
-        #     SK(NNRBFKernel(idim=2, odim=2, layer_sizes=(4, 4, 4)))
-        #     * SK(gpytorch.kernels.MaternKernel(ard_num_dims=2, mu=0.5))
-        #     # * SK(NNRBFKernel(idim=2, odim=2, layer_sizes=(2, 2, 2)))
-        # )
-        # 
-        # base_covar_module = (
-        #     SK(NNRBFKernel(idim=2, odim=2, layer_sizes=(4, 4, 4)))
-        #     * SK(NNMaternKernel(idim=2, odim=2, layer_sizes=(2, 2, 2), mu=0.5))
-        #     # * SK(NNRBFKernel(idim=2, odim=2, layer_sizes=(2, 2, 2)))
-        # )
-        # base_covar_module = (
-        #     SK(NNRQKernel(idim=2, odim=2, layer_sizes=(2,8,2)))
-        #     * SK(WrapLinear(gpytorch.kernels.MaternKernel(ard_num_dims=2, mu=0.5)))
-        #     # * SK(NNRBFKernel(idim=2, odim=2, layer_sizes=(2, 2, 2)))
-        # ) 
-        # base_covar_module = SK(NNRBFKernel(idim=2, odim=2, layer_sizes=(8, 4)))
-        # base_covar_module = SK(NNRBFKernel(idim=2, odim=2, layer_sizes=(16, 4))) * SK(
-        #     gpytorch.kernels.MaternKernel(ard_num_dims=2, mu=0.5)
-        # )
-        # base_covar_module = SK(gpytorch.kernels.RBFKernel(ard_num_dims=2))
-
-        # base_covar_module = SK(NNRBFKernel(idim=2, odim=2, layer_sizes=(16, 8))) * SK(
-        #     WrapLinear(gpytorch.kernels.MaternKernel(ard_num_dims=2, mu=2.5))
-        # )
-
-        # base_covar_module = SK(NNRBFKernel(idim=2, odim=2, layer_sizes=(8, 4))) * SK(
-        #     WrapLinear(gpytorch.kernels.RBFKernel(ard_num_dims=2))
-        # )
-
-        # base_covar_module = SK(
-        #     gpytorch.kernels.RBFKernel(ard_num_dims=2),
-        #     outputscale_constraint=gpytorch.constraints.Interval(0.2, 1.0),
-        # ) + SK(
-        #     NNRBFKernel(idim=2, odim=2, layer_sizes=(16, 8)),
-        #     outputscale_constraint=gpytorch.constraints.Interval(0.2, 1.0),
-        # )
-        # base_covar_module = SK(NNMaternKernel(idim=2, odim=2, layer_sizes=(8,6,4)))
-        # base_covar_module = SK(NNRBFKernel(idim=2, odim=2, layer_sizes=(8, 4))) * SK(
-        #     gpytorch.kernels.MaternKernel(idim=2, odim=2, mu=0.5)
-        # )
-        ################# GOOOOODD
-        ################# GOOOOODD
-        ################# GOOOOODD
-        base_covar_module = (
-            SK(NNMaternKernel(idim=2, odim=2, layer_sizes=(15,10,5)))
+        base_covar_module = SK(NNRBFKernel(idim=2, odim=2, layer_sizes=(12, 8))) + SK(
+            gpytorch.kernels.MaternKernel(ard_num_dims=2, mu=2.5)
         )
-        ################# GOOOOODD
-        
-        base_covar_module = (
-            SK(NNMaternKernel(idim=2, odim=2, layer_sizes=(10,5)))
-        )
-        # base_covar_module = SK(gpytorch.kernels.RBFKernel(ard_num_dims=2))
-        ################# GOOOOODD
-        #
-            # SK(NNRBFKernel(idim=2, odim=2, layer_sizes=(16, 10)))
-            # * SK(WrapLinear(gpytorch.kernels.MaternKernel(ard_num_dims=2, mu=0.5)))
-            # * SK(NNRBFKernel(idim=2, odim=2, layer_sizes=(2, 2, 2)))
-
-        # base_covar_module = SK(NNMaternKernel(idim=2, odim=2, layer_sizes=(8, 4))) + SK(
-        #     NNRBFKernel(idim=2, odim=2, layer_sizes=(4, 3))
-        # )
-        #
-        # base_covar_module = SK(WrapLinear(gpytorch.kernels.RBFKernel(ard_num_dims=2)))
-        # base_covar_module = SK(gpytorch.kernels.MaternKernel(ard_num_dims=2), mu=1.5)
-        # base_covar_module = SK(
-        #     NNRBFKernel(idim=2, odim=2, layer_sizes=(8, 4)) ) * SK(
-        #     * gpytorch.kernels.MaternKernel(idim=2, odim=2, mu=1.5)
-        # )
-        # base_covar_module = SK(NNRBFKernel(idim=2, odim=2, layer_sizes=(8, 4))) * SK(
-        #     NNMaternKernel(idim=2, odim=2, mu=0.5, layer_sizes=(4,))
-        # )
-
-        # base_covar_module = SK(gpytorch.kernels.RBFKernel(ard_num_dims=2)) + SK(
-        #     NNRQKernel(idim=2, odim=2, layer_sizes=(8, 4))
-        # )
-
-        # base_covar_module = SK(gpytorch.kernels.RBFKernel(ard_num_dims=2)) + SK(NonStatKernel(ard_num_dims=2, count=2))
-
-        # self.covar_module = gpytorch.kernels.InducingPointKernel(
-        #     base_covar_module,
-        #     likelihood=likelihood,
-        #     inducing_points=ind,
-        # )
+        # base_covar_module = SK(NNMaternKernel(idim=2, odim=2, layer_sizes=(12,8)))
 
         self.covar_module = base_covar_module
-
-        # self.covar_module.inducing_points.requires_grad = False
-        # gs = gpytorch.utils.grid.choose_grid_size(train_x, 0.25)
-        # logger.info(f"Grid size is {gs}")
-        # self.covar_module = gpytorch.kernels.GridInterpolationKernel(
-        #     gpytorch.kernels.ScaleKernel(gpytorch.kernels.RBFKernel(ard_num_dims=2)),
-        #     num_dims=2,
-        #     grid_size=gs,
-        # )
-
-        # self.feature_extractor = LargeFeatureExtractor(layer_sizes=(8,4))
-        # self.scale_to_bounds = gpytorch.utils.grid.ScaleToBounds(-1.0,1.0)
 
     def forward(self, x):
         # x = self.feature_extractor(x)

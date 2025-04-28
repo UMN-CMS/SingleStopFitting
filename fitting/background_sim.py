@@ -2,6 +2,7 @@ import pickle as pkl
 from .regression import DataValues
 import gpytorch
 import mplhep
+from fitting.estimate import validate
 from .utils import chi2Bins
 from .predictive import makePosteriorPred
 import numpy as np
@@ -20,49 +21,6 @@ logger = logging.getLogger(__name__)
 torch.set_default_dtype(torch.float64)
 
 
-def validate(model, train, test, window_mask, train_transform):
-    import torch
-
-    model.eval()
-    with (
-        gpytorch.settings.fast_computations(
-            covar_root_decomposition=False, log_prob=False, solves=False
-        ),
-        torch.no_grad(),
-        gpytorch.settings.fast_pred_samples(state=False),
-        gpytorch.settings.fast_pred_var(state=False),
-        gpytorch.settings.lazily_evaluate_kernels(state=False),
-    ):
-        post = model(test.X)
-        post_reg = post.mean
-
-        # pred_all = model.likelihood(model(test.X[~window_mask]))
-        # pred_blind = model.likelihood(model(test.X[window_mask]))
-
-    real_y = test.Y
-    real_v = test.V
-    if hasattr(model.likelihood, "second_noise"):
-        logger.info(f"Adding extra noise {model.likelihood.second_noise}")
-        real_v += model.likelihood.second_noise
-
-    # post_reg = train_transform.transform_y.iTransformData(model(test.X).mean)
-    # real = train_transform.transform_y.iTransformData(test.Y)
-    chi2_blind_post_raw = chi2Bins(post_reg, real_y, real_v, mask=window_mask)
-    chi2_post_raw = chi2Bins(post_reg, real_y, real_v, mask=~window_mask)
-    logger.info(
-        f"Validate Chi2 (seen={chi2_post_raw:0.3f}) (blind={chi2_blind_post_raw:0.3f})"
-    )
-    # all_nlpd = gpytorch.metrics.negative_log_predictive_density(pred_all, test.Y)
-    # blind_nlpd = gpytorch.metrics.negative_log_predictive_density(
-    #     pred_blind, test.Y[window_mask]
-    # )
-    # logger.info(f"NLPD (seen={all_nlpd:0.3f}) (blind={blind_nlpd:0.3f})")
-
-    model.train()
-    return (
-        chi2_post_raw.detach(),
-        chi2_blind_post_raw.detach(),
-    )
 
 
 def makeSimulatedBackground(

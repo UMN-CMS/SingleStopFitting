@@ -14,8 +14,8 @@ stream_output=true
 
 
 
-OUTDIR=condor_combine_results_2025_04_22_matern_spread
-INDIR=condor_results_2025_04_22_matern_spread
+OUTDIR=condor_combine_results_2025_04_23_srmc
+INDIR=condor_results_2025_04_23_srmc
 
 should_transfer_files = YES
 when_to_transfer_output = ON_EXIT

@@ -34,8 +34,8 @@ max_noise = 5e-6
 # min_noise = 1e-20
 # max_noise = 1e-10
 
-# min_noise = 1e-10
-# max_noise = 1e-6
+min_noise = 1e-10
+max_noise = 1e-4
 
 min_fixed_noise = 1e-9
 
@@ -56,6 +56,17 @@ class TrainedModel:
     training_progress: dict
 
     learned_noise: bool = False
+
+
+def makeLikelihood(data, learn_noise=True):
+    likelihood = gpytorch.likelihoods.FixedNoiseGaussianLikelihood(
+        noise=data.V,
+        learn_additional_noise=learn_noise,
+        noise_constraint=gpytorch.constraints.Interval(
+            data.V.min() / 10, torch.max(data.V)
+        ),
+    )
+    return likelihood
 
 
 def getModelingData(trained_model, other_data=None):
@@ -88,11 +99,14 @@ def loadModel(trained_model, other_data=None):
     logger.info(f"Loading model, learned noise is {trained_model.learned_noise}")
 
     with gpytorch.settings.min_fixed_noise(double_value=min_fixed_noise):
-        likelihood = gpytorch.likelihoods.FixedNoiseGaussianLikelihood(
-            noise=normalized_blinded_data.V,
-            learn_additional_noise=trained_model.learned_noise,
-            noise_constraint=gpytorch.constraints.Interval(min_noise, max_noise),
+        likelihood = makeLikelihood(
+            normalized_blinded_data, learn_noise=trained_model.learned_noise
         )
+        # likelihood = gpytorch.likelihoods.FixedNoiseGaussianLikelihood(
+        #     noise=normalized_blinded_data.V,
+        #     learn_additional_noise=trained_model.learned_noise,
+        #     noise_constraint=gpytorch.constraints.Interval(min_noise, max_noise),
+        # )
 
     inducing = model_state.get("covar_module.inducing_points")
     if inducing is not None:
@@ -118,7 +132,11 @@ def loadModel(trained_model, other_data=None):
 
 def getPosteriorProcess(model, data, transform):
     normalized_data = transform.transform(data)
-    extra_noise = getattr(model.likelihood, "second_noise", None)
+    extra_noise = None
+    if model.likelihood.second_noise_covar is not None:
+        extra_noise = model.likelihood.second_noise
+
+    print
     pred_dist = computePosterior(
         model,
         model.likelihood,
@@ -327,11 +345,13 @@ def updateModelNewData(
     norm_test = normalized_test_data
 
     with gpytorch.settings.min_fixed_noise(double_value=min_fixed_noise):
-        likelihood = gpytorch.likelihoods.FixedNoiseGaussianLikelihood(
-            noise=train.V,
-            learn_additional_noise=learn_noise,
-            noise_constraint=gpytorch.constraints.Interval(min_noise, max_noise),
-        )
+        likelihood = makeLikelihood(train, learn_noise=learn_noise)
+        # likelihoods = makeLikelihood(train.V)
+        # likelihood = gpytorch.likelihoods.FixedNoiseGaussianLikelihood(
+        #     noise=train.V,
+        #     learn_additional_noise=learn_noise,
+        #     noise_constraint=gpytorch.constraints.Interval(min_noise, max_noise),
+        # )
     model.set_train_data(train.X, train.Y, strict=False)
     model.likelhood = likelihood
 
@@ -398,11 +418,12 @@ def doCompleteRegression(
     # logger.info(train.V)
     logger.info(f"Learn additional noise is: {learn_noise}")
     with gpytorch.settings.min_fixed_noise(double_value=min_fixed_noise):
-        likelihood = gpytorch.likelihoods.FixedNoiseGaussianLikelihood(
-            noise=train.V,
-            learn_additional_noise=learn_noise,
-            noise_constraint=gpytorch.constraints.Interval(min_noise, max_noise),
-        )
+        likelihood = makeLikelihood(train, learn_noise=learn_noise)
+        # likelihood = gpytorch.likelihoods.FixedNoiseGaussianLikelihood(
+        #     noise=train.V,
+        #     learn_additional_noise=learn_noise,
+        #     noise_constraint=gpytorch.constraints.Interval(min_noise, max_noise),
+        # )
 
     logger.info(f"Some Variances are {train.V[::10]}")
 

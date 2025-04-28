@@ -1,4 +1,4 @@
-executable      = distributed/combine_exec
+executable      = distributed/combine_exec_control
 
 universe        = vanilla
 request_cpus   = 1
@@ -13,12 +13,12 @@ stream_error=true
 stream_output=true
 
 
-OUTDIR=condor_combine_results_2025_04_22_control
-INDIR=condor_results_2025_04_22_control
+OUTDIR=condor_combine_results_2025_04_23_control
+INDIR=condor_results_2025_04_23_control
 
 should_transfer_files = YES
 when_to_transfer_output = ON_EXIT
-transfer_input_files = distributed/combine_exec,distributed/combine_script,$(INDIR)/$(SIGNAL_NAME)/$(SUB_SIG_PATH)
+transfer_input_files = distributed/combine_exec_control,distributed/combine_script_control,$(INDIR)/$(SIGNAL_NAME)/$(SUB_SIG_PATH)
 transfer_output_files = $(OUTDIR)
 preserve_relative_paths = true
 
