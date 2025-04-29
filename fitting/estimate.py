@@ -257,6 +257,7 @@ def estimateSingle2D(
     scale_background=None,
     min_base_variance=None,
     extra_metadata=None,
+    use_fit_as_signal=False,
     **kwargs,
 ):
     base_dir = Path(base_dir)
@@ -326,6 +327,21 @@ def estimateSingle2D(
     else:
         logger.warn(f"Could not find a window for signal {signal_name}")
         window = None
+
+    if use_fit_as_signal:
+        logger.warn(f"Remaking signal from 2D Gaussian fit")
+        signal_hist_total = signal_hist.sum().value
+        fit_vals = window.vals(signal_regression_data.X)
+        scale = signal_hist_total / fit_vals.sum()
+        logger.warn(
+            f"Raw signal hist has norm : {signal_hist_total:0.2f}, fit has norm {fit_vals.sum():0.2f}. Rescaling by {scale:0.2f}"
+        )
+        signal_regression_data.Y = fit_vals * scale
+        signal_regression_data.V = fit_vals * scale
+        h = signal_regression_data.toHist()
+        signal_hist.view(flow=False).value = h.values()
+        signal_hist.view(flow=False).variance = h.variances()
+
     sd = dict(
         signal_data=signal_regression_data,
         signal_hist=signal_hist,
@@ -426,6 +442,7 @@ def main(args):
         blinding_signal=args.blind_signal,
         scale_background=args.scale_background,
         signal_injections=args.injected,
+        use_fit_as_signal=args.use_fit_as_signal,
         min_base_variance=5,
         use_other_model=other_model,
         inject_other_signals=args.inject_other_signals,
@@ -459,6 +476,12 @@ def addToParser(parser):
     parser.add_argument("--injected", type=float, nargs="*", default=[0.0])
     parser.add_argument("-i", "--iterations", type=int, default=100)
     parser.add_argument("--cuda", action="store_true", help="Use cuda", default=False)
+    parser.add_argument(
+        "--use-fit-as-signal",
+        action="store_true",
+        help="Use the 2D gaussian as the signal shape",
+        default=False,
+    )
     parser.add_argument(
         "--no-contamination",
         action="store_true",
