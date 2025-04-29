@@ -16,7 +16,7 @@ log             = logs/log.$(cluster).$(process)
 stream_error=true
 stream_output=true
 
-OUTDIR=condor_results_2025_04_25_srmc/$(SIGNAL_NAME)/$(SUB_SIG_PATH)
+OUTDIR=condor_results_2025_04_28_srmc/$(SIGNAL_NAME)/$(SUB_SIG_PATH)
 
 environment = "OUTDIR=$(OUTDIR)"
 
@@ -26,7 +26,7 @@ transfer_input_files = fitting,temp/env.tar.gz,setup.sh,backgrounds/background_2
 transfer_output_files = $(OUTDIR)
 preserve_relative_paths = true
 
-arguments= -o $(OUTDIR) -b $(BACKGROUND_PATH) -s $(SIGNAL_PATH)  -n $(SIGNAL_NAME) -r $(REGION) -l 0.04 --injected 0.0 1.0 8.0 16.0 --metadata algo=$(SUB_SIG_PATH) --spread 1.5
+arguments= -o $(OUTDIR) -b $(BACKGROUND_PATH) -s $(SIGNAL_PATH)  -n $(SIGNAL_NAME) -r $(REGION) -l 0.04 --injected $(INJECTION) --metadata algo=$(SUB_SIG_PATH) --spread $(SPREAD)
 
-queue SIGNAL_NAME, REGION, SUB_SIG_PATH, SIGNAL_PATH, BACKGROUND_PATH from inputs.txt
+queue SIGNAL_NAME, REGION, SUB_SIG_PATH, SIGNAL_PATH, BACKGROUND_PATH, INJECTION, SPREAD from inputs.txt
 

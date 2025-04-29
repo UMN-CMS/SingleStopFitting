@@ -23,7 +23,6 @@ def plotDiagnostics(save_dir, trained_model, **kwargs):
     coupling, mt, mx = tm["coupling"], tm["mt"], tm["mx"]
     mt, mx = float(mt), float(mx)
     all_data, train_mask = regression.getModelingData(trained_model)
-    extra_noise = None
     pred_dist = regression.getPosteriorProcess(model, all_data, trained_model.transform)
 
     pred_data = DataValues(all_data.X, pred_dist.mean, pred_dist.variance, all_data.E)

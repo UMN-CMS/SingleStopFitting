@@ -1,4 +1,5 @@
 from pathlib import Path
+import itertools as it
 import argparse
 from collections import namedtuple
 import re
@@ -36,6 +37,8 @@ def parseArgs():
     parser.add_argument("-o", "--output", type=str, help="Output file name")
     parser.add_argument("-b", "--background")
     parser.add_argument("-s", "--signal")
+    parser.add_argument("-i", "--injections", nargs="+", type=float, required=True)
+    parser.add_argument("--spreads", nargs="+", type=float, required=True)
 
     return parser.parse_args()
 
@@ -51,6 +54,7 @@ def main():
     args = parseArgs()
     inputs = [Path(x) for x in args.inputs]
     signal_mapping = {getSignalParts(x): x for x in inputs}
+    ret = []
     for s, path in signal_mapping.items():
         cats = getCat(s.stop, s.chargino)
         area = getMassArea(s.stop)
@@ -58,7 +62,9 @@ def main():
             f = getFileNoCase(path, args.signal.format(area=area, cat=c, **s._asdict()))
             cols = ["signal_" + "_".join(map(str, s)), f"Signal{s.coupling}", c, str(f)]
             cols.append(args.background.format(area=area, cat=c, **s._asdict()))
-            print(" ".join(cols))
+            ret.append(cols)
+    for cols, inject,spread in it.product(ret, args.injections, args.spreads):
+        print(" ".join(map(str, (*cols, inject, spread))))
 
 
 if __name__ == "__main__":

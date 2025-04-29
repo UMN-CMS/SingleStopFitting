@@ -48,6 +48,10 @@ def getPosteriorPred(bkg_mvn, num_samples=800):
     return pred
 
 
+
+
+def makePullPlot(E,X,Y,save_func)
+
 def makePosteriorPred(
     bkg_mvn,
     test_data,
@@ -205,7 +209,18 @@ def chi2PredTest(mean, variance, obs, **kwargs):
 #     return torch.mean(post_pred, dim=-1)
 
 
-def plotPPD(ax, dist, obs):
+def testStatPerBin(obs, exp, var, power=2):
+
+    m = var > 0
+    obs, exp, var = obs[..., m], exp[..., m], var[..., m]
+
+    ret = abs(obs - exp).pow(power) / var
+    # ret = obs
+
+    return ret
+
+
+def plotPPD(ax, dist, obs, quantiles=(0.05, 0.16, 0.5, 0.84, 0.95)):
     import matplotlib.pyplot as plt
     import numpy as np
     from scipy.stats import gaussian_kde
@@ -215,10 +230,15 @@ def plotPPD(ax, dist, obs):
     density.covariance_factor = lambda: 0.25
     density._compute_covariance()
     ax.plot(xs, density(xs), label="Posterior Predictive Distribution")
+
     ax.axvline(obs, 0, 1, color="red", linestyle="--", alpha=0.5, label="Observed")
     ax.legend(loc="upper right")
     ax.set_xlabel(f"")
+    for q in np.quantile(dist, quantiles):
+        y = density(q)
+        ax.vlines(q, 0, y[0], color="gray", linestyle="--", alpha=0.5)
 
+    ax.set_ylim(bottom=0)
     ax.set_xlabel(r"$\frac{(x-x_{pred})^2}{\sigma_{pred}^2}$")
     mplhep.sort_legend(ax=ax)
     addCMS(ax)
@@ -229,19 +249,21 @@ def makePValuePlots(pred, all_data, train_mask, save_func, test_stat=chi2PredTes
     import numpy as np
     from scipy.stats import gaussian_kde
 
-    print(pred)
-
-    pred_samples = getPosteriorPred(pred, num_samples=2000)
+    pred_samples = getPosteriorPred(pred, num_samples=500)
     post_pred = pred_samples["observed"]
     obs = all_data.Y
-    dist = test_stat(pred.mean, pred.variance, post_pred).numpy()
-    obs_stat = test_stat(pred.mean, pred.variance, all_data.Y).numpy()
+    m = torch.ones_like(obs, dtype=bool)
+
+    dist = test_stat(pred.mean[m], pred.variance[m], post_pred[:, m]).numpy()
+    obs_stat = test_stat(pred.mean[m], pred.variance[m], all_data.Y[m]).numpy()
     quantile = np.count_nonzero(dist < obs_stat) / dist.size
+
 
     print(
         f"Predictive dist mean/median/std: {np.mean(dist):0.4f}/{np.median(dist):0.4f}/{np.std(dist):0.4f}"
     )
     print(f"Observed data val: {obs_stat:0.4f}")
+    print(f"Observed quantile: {quantile:0.4f}")
     fig, ax = plt.subplots()
     plotPPD(ax, dist, obs_stat)
     save_func("post_pred_density", fig)
@@ -257,7 +279,7 @@ def makePValuePlots(pred, all_data, train_mask, save_func, test_stat=chi2PredTes
         pred.variance[train_mask],
         all_data.Y[train_mask],
     ).numpy()
-    quantile_blind = np.count_nonzero(dist_blind < obs_stat_blind) / dist_blind.size
+    quantile_blind = np.count_nonzero(dist_blind < obs_stat_blind) / dist_blind.shape[0]
 
     print(
         f"Predictive blind dist mean/median/std: {np.mean(dist_blind):0.4f}/{np.median(dist_blind):0.4f}/{np.std(dist_blind):0.4f}"
@@ -266,7 +288,7 @@ def makePValuePlots(pred, all_data, train_mask, save_func, test_stat=chi2PredTes
     print(f"Blind quantile: {quantile_blind:0.4f}")
 
     fig, ax = plt.subplots()
-    plotPPD(ax, dist_blind, obs_stat)
+    plotPPD(ax, dist_blind, obs_stat_blind)
     save_func("post_pred_density_blind", fig)
 
     data = {
@@ -285,6 +307,35 @@ def makePValuePlots(pred, all_data, train_mask, save_func, test_stat=chi2PredTes
     }
     addCMS(ax)
     save_func("post_pred_data", data)
+
+    fig, ax = plt.subplots()
+    perbin = testStatPerBin(post_pred[:, m], pred.mean[m], pred.variance[m]).numpy()
+    perbin_obs = testStatPerBin(all_data.Y[m], pred.mean[m], pred.variance[m]).numpy()
+    print(perbin.shape)
+    print(perbin.shape)
+    perbin_quantile = np.sum(perbin < perbin_obs, axis=0) / perbin.shape[0]
+    ax.set_xlabel("$m_{\\tilde{t}}$ [GeV]")
+    ax.set_ylabel("$m_{\\tilde{\chi}} / m_{\\tilde{t}}$")
+    # import code
+    # import readline
+    # import rlcompleter
+    # 
+    # vars = globals()
+    # vars.update(locals())
+    # readline.set_completer(rlcompleter.Completer(vars).complete)
+    # readline.parse_and_bind("tab: complete")
+    # code.InteractiveConsole(vars).interact()
+    plotRaw(
+        ax,
+        all_data.E,
+        all_data.X,
+        torch.from_numpy(perbin_quantile),
+        cmap="coolwarm",
+        # cmin=0,
+        # cmax=1,
+    )
+    addCMS(ax)
+    save_func("perbin_quantile", fig)
 
 
 def makePValuePlotsFromModel(trained_model, save_dir, test_stat=None):

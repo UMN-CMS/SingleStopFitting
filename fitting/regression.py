@@ -136,7 +136,6 @@ def getPosteriorProcess(model, data, transform):
     if model.likelihood.second_noise_covar is not None:
         extra_noise = model.likelihood.second_noise
 
-    print
     pred_dist = computePosterior(
         model,
         model.likelihood,

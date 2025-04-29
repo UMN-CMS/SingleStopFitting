@@ -50,7 +50,7 @@ def chi2Bins(obs, exp, var, mask=None, min_var=0, power=2):
     m = var > min_var
     obs, exp, var = obs[..., m], exp[..., m], var[..., m]
 
-    return torch.sum((obs - exp).pow(power) / var, dim=-1) / exp.size(-1)
+    return torch.sum(abs(obs - exp).pow(power) / var, dim=-1) / exp.size(-1)
 
 
 def fixMVN(mvn):

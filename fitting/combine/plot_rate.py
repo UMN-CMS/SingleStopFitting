@@ -22,7 +22,7 @@ def plotRates(data, signal_ids, output_path, coupling="312"):
         signal_id: np.array(
             sorted(
                 [
-                    (x["signal_injected"], x.get("fit", dict(r=None))["r"])
+                    (x["signal_injected"], (x.get("fit") or {"r": None})["r"])
                     for x in data[signal_id]["injections"]
                 ]
             )
@@ -90,7 +90,7 @@ def main():
     #     data = json.load(f)
 
     # plotRate(data, args.output, coupling=args.coupling)
-    with open("sr_gathered.json", "r") as f:
+    with open("gathered/srmc_gathered.json", "r") as f:
         data = json.load(f)
     data = {SignalId(**x["signal_info"]): x for x in data}
     points = [
@@ -98,12 +98,15 @@ def main():
         SignalId("uncomp", "312", 1000, 400),
         SignalId("uncomp", "312", 1200, 400),
         SignalId("uncomp", "312", 1300, 600),
+        SignalId("uncomp", "312", 1400, 400),
         SignalId("uncomp", "312", 1500, 400),
+        SignalId("uncomp", "312", 1500, 600),
         SignalId("uncomp", "312", 2000, 400),
-        # SignalId("uncomp", "312", 2000, 1200),
+        SignalId("uncomp", "312", 2000, 1200),
         SignalId("comp", "312", 1300, 1200),
         SignalId("comp", "312", 1500, 1400),
-        # SignalId("comp", "312", 2000, 1900),
+        SignalId("comp", "312", 1400, 1300),
+        SignalId("comp", "312", 2000, 1900),
     ]
     # data[SignalId("uncomp", "312", "1200", "400")]
     plotInjectedRates(data, points, "deletemelater/rates_asimov_312.png", coupling=312)

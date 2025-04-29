@@ -124,15 +124,36 @@ def main():
         SignalId("comp", "312", 1500, 1450),
         # SignalId("comp", "312", 2000, 1900),
     ]
-    points_uncomp = [d for d in data if d.algo == "uncomp" and d.mx != 100]
-    sigs_uncomp = extractSigs(data, points_uncomp, injection=1.0)
 
-    # plotSig(sigs_uncomp, "deletemelater/312sig_uncomp.png")
-    # points_comp = [d for d in data if d.algo == "comp" and d.mx != 100]
-    #
-    # sigs_comp = extractSigs(data, points_comp, injection=1.0)
-    # plotSig(sigs_comp, "deletemelater/312sig_comp.png")
-    #
+    points_uncomp = [d for d in data if d.algo == "uncomp" and d.mx != 100]
+    injected_sigs_uncomp = extractSigInjected(data, points_uncomp, injection=1)
+    sigs_uncomp = extractSigs(data, points_uncomp, injection=1)
+    points_comp = [d for d in data if d.algo == "comp" and d.mx != 100]
+    injected_sigs_comp = extractSigInjected(data, points_comp, injection=1)
+    sigs_comp = extractSigs(data, points_comp, injection=1)
+
+    points_pref = [
+        d
+        for d in data
+        if (
+            (d.algo == "uncomp" and d.mx / d.mt < 0.75)
+            or (d.algo == "comp" and d.mx / d.mt > 0.75)
+        )
+        and d.mx > 300
+    ]
+    injected_sigs_pref = extractSigInjected(data, points_pref, injection=1)
+    sigs_pref = extractSigs(data, points_pref, injection=1)
+    print(sigs_pref)
+
+    plotSig(injected_sigs_uncomp, "deletemelater/asimov_312sig_uncomp.png")
+    plotSig(sigs_uncomp, "deletemelater/srmc_312sig_uncomp.png")
+
+    plotSig(injected_sigs_comp, "deletemelater/asimov_312sig_comp.png")
+    plotSig(sigs_comp, "deletemelater/srmc_312sig_comp.png")
+
+    plotSig(injected_sigs_pref, "deletemelater/asimov_312sig_pref.png")
+    plotSig(sigs_pref, "deletemelater/srmc_312sig_pref.png")
+
     # data = {
     #     x: (
     #         y / sigs_comp[x]
@@ -146,40 +167,7 @@ def main():
     #     )
     #     for x, y in sigs_uncomp.items()
     # }
-    # plotSigRatio(data, "deletemelater/312sig_ratio.png")
-    # points = [
-    #     SignalId("uncomp", "313", 1000, 400),
-    #     SignalId("uncomp", "313", 1500, 600),
-    #     SignalId("uncomp", "313", 2000, 600),
-    #     SignalId("comp", "313", 2000, 1900),
-    #     SignalId("comp", "313", 1500, 1400),
-    #     # SignalId("comp", "312", 2000, 1900),
-    # ]
-    # plotRates(data, points, "deletemelater/313rates.png")
-
-    points_uncomp = [d for d in data if d.algo == "uncomp" and d.mx != 100]
-    sigs_uncomp = extractSigInjected(data, points_uncomp, injection=1)
-    print(sigs_uncomp)
-    plotSig(sigs_uncomp, "deletemelater/asimov_312sig_uncomp.png")
-
-    points_comp = [d for d in data if d.algo == "comp" and d.mx != 100]
-    sigs_comp = extractSigInjected(data, points_comp, injection=1)
-    plotSig(sigs_comp, "deletemelater/asimov_312sig_comp.png")
-    
-    data = {
-        x: (
-            y / sigs_comp[x]
-            if (
-                x in sigs_comp
-                and y is not None
-                and sigs_comp[x] is not None
-                and sigs_comp[x] > 0
-            )
-            else None
-        )
-        for x, y in sigs_uncomp.items()
-    }
-    plotSigRatio(data, "deletemelater/asimov_312sig_ratio.png")
+    # plotSigRatio(data, "deletemelater/asimov_312sig_ratio.png")
 
 
 if __name__ == "__main__":
