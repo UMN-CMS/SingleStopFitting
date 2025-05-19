@@ -38,14 +38,19 @@ def idFromMeta(data):
 
 
 def loadOneGPR(directory):
-    logger.info(f"Loading gpr directory {directory}")
+    logger.debug(f"Loading gpr directory {directory}")
     directory = Path(directory)
     metadata_path = directory / "metadata.json"
     chi_path = directory / "chi2_info.json"
     post_pred_path = directory / "post_pred_data.json"
 
-    with open(metadata_path, "r") as f:
-        metadata = json.load(f)
+
+    try:
+        with open(metadata_path, "r") as f:
+            metadata = json.load(f)
+    except OSError as e:
+        logger.warn(f"Could not find {metadata_path}")
+        return None
 
     with open(chi_path, "r") as f:
         chi2_data = json.load(f)
@@ -89,10 +94,10 @@ class ExtractGOF(object):
         directory = Path(directory)
         obs = directory / "higgsCombine.gof_obs.GoodnessOfFit.mH120.root"
         toys = directory / "higgsCombine.gof_toys.GoodnessOfFit.mH120.123456.root"
-        logger.info(f"Attempting to load GOF from {obs} and {toys}")
+        logger.debug(f"Attempting to load GOF from {obs} and {toys}")
         if not (obs.exists() and toys.exists()):
-            logger.info(f'Obs exists: {obs.exists()} : "{obs}"')
-            logger.info(f'Toys exists: {toys.exists()} : "{toys}"')
+            logger.debug(f'Obs exists: {obs.exists()} : "{obs}"')
+            logger.debug(f'Toys exists: {toys.exists()} : "{toys}"')
             return None
         obs_val = extractProperty(obs, "limit")
         toys_vals = extractProperty(toys, "limit")
@@ -107,7 +112,7 @@ class ExtractFit(object):
     def __call__(self, directory):
         directory = Path(directory)
         f = directory / f"higgsCombine.{self.tag}.MultiDimFit.mH120.root"
-        logger.info(f"Attempting to load fit from {f}")
+        logger.debug(f"Attempting to load fit from {f}")
         if not f.exists():
             return None
         val = extractProperty(f, "r")
@@ -129,9 +134,9 @@ class ExtractSig(object):
                 return None
         directory = Path(directory)
         f = directory / f"higgsCombine.{self.tag}.Significance.mH120.root"
-        logger.info(f"Attempting to load fit from {f}")
+        logger.debug(f"Attempting to load fit from {f}")
         if not f.exists():
-            logger.info(f"Failed to load significance from {f}")
+            logger.debug(f"Failed to load significance from {f}")
             return None
         val = extractProperty(f, "limit")
         if val:
@@ -156,14 +161,14 @@ class ExtractSigInject(object):
         for v in self.vals:
             t = self.tag + str(v)
             f = directory / f"higgsCombine.{t}.Significance.mH120.root"
-            logger.info(f"Attempting to load fit from {f}")
+            logger.debug(f"Attempting to load fit from {f}")
             if not f.exists():
-                logger.info(f"Failed to load significance from {f}")
+                logger.debug(f"Failed to load significance from {f}")
                 val= None
             else:
                 val = extractProperty(f, "limit")
-            logger.info(f)
-            logger.info(val)
+            logger.debug(f)
+            logger.debug(val)
             if val:
                 val = val[0]
             else:
@@ -186,14 +191,14 @@ class ExtractRateInject(object):
         for v in self.vals:
             t = self.tag + str(v)
             f = directory / f"higgsCombine.{t}.MultiDimFit.mH120.root"
-            logger.info(f"Attempting to load fit from {f}")
+            logger.debug(f"Attempting to load fit from {f}")
             if not f.exists():
-                logger.info(f"Failed to load fit from {f}")
+                logger.debug(f"Failed to load fit from {f}")
                 val= None
             else:
                 val = extractProperty(f, "r")
-            logger.info(f)
-            logger.info(val)
+            logger.debug(f)
+            logger.debug(val)
             if val:
                 val = val[0]
             else:
@@ -211,9 +216,9 @@ class ExtractLimit(object):
     def __call__(self, directory):
         directory = Path(directory)
         f = directory / f"higgsCombine.{self.tag}.AsymptoticLimits.mH120.root"
-        logger.info(f"Attempting to load fit from {f}")
+        logger.debug(f"Attempting to load fit from {f}")
         if not f.exists():
-            logger.info(f"Failed to load limit from {f}")
+            logger.debug(f"Failed to load limit from {f}")
             return None
         val = extractProperty(f, "limit")
         if val:
@@ -237,7 +242,7 @@ combine_extractors = [
 
 def loadOneCombine(directory):
     directory = Path(directory)
-    logger.info(f"Loading combine directory {directory}")
+    logger.debug(f"Loading combine directory {directory}")
     with open(directory / "metadata.json", "r") as f:
         metadata = json.load(f)
     all_data = {
@@ -246,7 +251,12 @@ def loadOneCombine(directory):
     }
     data = {}
     for extractor in combine_extractors:
-        data[extractor.name] = extractor(directory)
+        try:
+            data[extractor.name] = extractor(directory)
+        except Exception as e:
+            data[extractor.name] = None
+
+            
 
     all_data["data"] = data
     return all_data
@@ -256,6 +266,8 @@ def main(args):
 
     gathered = {}
     for d in [loadOneGPR(d) for d in args.gpr_dirs]:
+        if not d:
+            continue
         sid = d["signal_id"]
         if sid not in gathered:
             gathered[sid] = {"signal_info": sid._asdict(), "injections": []}
@@ -269,10 +281,15 @@ def main(args):
 
     if args.combine_dirs:
         for c in [loadOneCombine(d) for d in args.combine_dirs]:
-            item = gathered[c["signal_id"]]
-            i = c["metadata"]["signal_injected"]
-            injected = next(x for x in item["injections"] if x["signal_injected"] == i)
-            injected.update(c["data"])
+            try:
+                item = gathered[c["signal_id"]]
+                i = c["metadata"]["signal_injected"]
+                injected = next(x for x in item["injections"] if x["signal_injected"] == i)
+                injected.update(c["data"])
+            except Exception as e:
+                logger.warn(f"Failed to gather for combine")
+                pass
+                
 
     gathered = list(gathered.values())
 
