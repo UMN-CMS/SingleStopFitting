@@ -58,12 +58,12 @@ class TrainedModel:
     learned_noise: bool = False
 
 
-def makeLikelihood(data, learn_noise=True):
+def makeLikelihood(data, learn_noise=True, factor=0.0001):
     likelihood = gpytorch.likelihoods.FixedNoiseGaussianLikelihood(
         noise=data.V,
         learn_additional_noise=learn_noise,
         noise_constraint=gpytorch.constraints.Interval(
-            data.V.min() / 10, torch.max(data.V)
+            data.V.min() * factor, torch.max(data.V) * factor
         ),
     )
     return likelihood
@@ -110,7 +110,6 @@ def loadModel(trained_model, other_data=None):
 
     inducing = model_state.get("covar_module.inducing_points")
     if inducing is not None:
-        print(inducing.size(0))
         model = model_class(
             normalized_blinded_data.X,
             normalized_blinded_data.Y,
@@ -197,7 +196,6 @@ class DataValues:
     def fromHistogram(histogram):
         edges = tuple(torch.from_numpy(a.edges) for a in histogram.axes)
         centers = tuple(torch.diff(e) / 2 + e[:-1] for e in edges)
-        print(centers[0].dtype)
         bin_values = torch.from_numpy(histogram.values())
         bin_vars = torch.from_numpy(histogram.variances())
         bin_values = bin_values.T
@@ -283,7 +281,11 @@ def optimizeHyperparams(
     for x in model.modules():
         if hasattr(x, "outputscale"):
             print(f"{type(x).__name__}: outputscale = {x.outputscale}")
-    print(list(model.named_parameters()))
+    for x in model.modules():
+        l = getattr(x, "lengthscale", None)
+        if l is not None:
+            print(f"{type(x).__name__}: lengthscale = {l}")
+    # print(list(model.named_parameters()))
 
     return model, likelihood, loss, training_progress
 
