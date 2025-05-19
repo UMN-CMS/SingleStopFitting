@@ -254,7 +254,6 @@ class MyNNRBFModel2D(gpytorch.models.ExactGP):
             raise RuntimeError("Cannot have both num inducing and inducing ratio")
 
         super().__init__(train_x, train_y, likelihood)
-        print(num_inducing)
         if inducing_ratio:
             self.inducing_ratio = inducing_ratio
             ind = train_x[:: self.inducing_ratio].clone()
@@ -266,13 +265,33 @@ class MyNNRBFModel2D(gpytorch.models.ExactGP):
 
         self.mean_module = gpytorch.means.ConstantMean()
 
-        # base_covar_module = SK(gpytorch.kernels.RBFKernel(ard_num_dims=2))
         # base_covar_module = SK(gpytorch.kernels.RQKernel(ard_num_dims=2))
+        # base_covar_module = SK(
+        #     gpytorch.kernels.RBFKernel(
+        #         ard_num_dims=2,
+        #         # lengthscale_constraint=gpytorch.constraints.Interval(1e-5, 1e-1),
+        #     )
+        # )
+        # base_covar_module = SK(
+        #     gpytorch.kernels.MaternKernel(
+        #         ard_num_dims=2,
+        #         # lengthscale_constraint=gpytorch.constraints.Interval(1e-5, 1e-1),
+        #     )
+        # )
 
-        base_covar_module = SK(NNRBFKernel(idim=2, odim=2, layer_sizes=(12, 8))) + SK(
-            gpytorch.kernels.MaternKernel(ard_num_dims=2, mu=2.5)
+
+        # base_covar_module = SK(NNRBFKernel(idim=2, odim=2, layer_sizes=(12, 8)))
+        # base_covar_module = SK(NNRBFKernel(idim=2, odim=2, layer_sizes=(20, 15, 10)))
+        base_covar_module = SK(NNRBFKernel(idim=2, odim=2, layer_sizes=(12,8))) + SK(
+            gpytorch.kernels.MaternKernel(ard_num_dims=2, mu=1.5)
         )
+        # base_covar_module = SK(NNRBFKernel(idim=2, odim=2, layer_sizes=(12, 8))) + SK(
+        #     gpytorch.kernels.RBFKernel(ard_num_dims=2)
+        # )
         # base_covar_module = SK(NNMaternKernel(idim=2, odim=2, layer_sizes=(12,8)))
+        # base_covar_module = SK(gpytorch.kernels.RBFKernel(ard_num_dims=2)) + SK(
+        #     gpytorch.kernels.MaternKernel(ard_num_dims=2, mu=1.5)
+        # )
 
         self.covar_module = base_covar_module
 
@@ -323,7 +342,6 @@ class SimpleRBF(gpytorch.models.ExactGP):
             raise RuntimeError("Cannot have both num inducing and inducing ratio")
 
         super().__init__(train_x, train_y, likelihood)
-        print(num_inducing)
         if inducing_ratio:
             self.inducing_ratio = inducing_ratio
             ind = train_x[:: self.inducing_ratio].clone()
