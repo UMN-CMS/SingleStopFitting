@@ -18,7 +18,7 @@ import mplhep
 import torch
 
 from . import models, regression
-from .blinder import GaussianWindow2D, MinYCut
+from .blinder import GaussianWindow2D, MinYCut, StaticWindow
 from .plotting.plots import windowPlots2D
 
 
@@ -318,9 +318,12 @@ def estimateSingle2D(
         import scipy
 
         try:
-            window = GaussianWindow2D.fromData(
-                signal_regression_data, spread=window_spread
-            )
+            if static_window_path:
+                window = StaticWindow.fromFile(static_window_path)
+            else:
+                window = GaussianWindow2D.fromData(
+                    signal_regression_data, spread=window_spread
+                )
         except (scipy.optimize.OptimizeWarning, RuntimeError) as e:
             raise e
             window = None
@@ -488,6 +491,7 @@ def addToParser(parser):
         help="Remove any signal outside of blinding window",
         default=False,
     )
+    parser.add_argument("--static-window-path", type=str, default=None)
     parser.add_argument("--spread", type=float, default=1.5)
     parser.add_argument("--inject-other-signals", default=None, type=str, nargs="*")
     parser.add_argument("--metadata", default=None, type=str, nargs="*")
