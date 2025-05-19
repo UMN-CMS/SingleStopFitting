@@ -4,7 +4,6 @@ import numpy as np
 import torch
 
 
-
 def rotationMatrix(theta):
     return torch.tensor(
         [[torch.cos(theta), -torch.sin(theta)], [torch.sin(theta), torch.cos(theta)]]
@@ -16,9 +15,7 @@ def numpyGaussian2D(X, amplitude, xo, yo, sigma_x, sigma_y, theta):
     a = (np.cos(theta) ** 2) / (2 * sigma_x**2) + (np.sin(theta) ** 2) / (
         2 * sigma_y**2
     )
-    b = -(np.sin(2 * theta)) / (4 * sigma_x**2) + (np.sin(2 * theta)) / (
-        4 * sigma_y**2
-    )
+    b = -(np.sin(2 * theta)) / (4 * sigma_x**2) + (np.sin(2 * theta)) / (4 * sigma_y**2)
     c = (np.sin(theta) ** 2) / (2 * sigma_x**2) + (np.cos(theta) ** 2) / (
         2 * sigma_y**2
     )
@@ -26,6 +23,7 @@ def numpyGaussian2D(X, amplitude, xo, yo, sigma_x, sigma_y, theta):
         -(a * ((x - xo) ** 2) + 2 * b * (x - xo) * (y - yo) + c * ((y - yo) ** 2))
     )
     return g
+
 
 def gaussian2D(X, amplitude, xo, yo, sigma_x, sigma_y, theta):
     x, y = X[..., 0], X[..., 1]
@@ -46,6 +44,7 @@ def gaussian2D(X, amplitude, xo, yo, sigma_x, sigma_y, theta):
 
 def makeWindow2D(signal_data, spread=1.0):
     import scipy.optimize
+
     X = signal_data.X
     s = X.max(dim=0).values
     X = X / s
@@ -95,6 +94,29 @@ class GaussianWindow2D:
     @staticmethod
     def fromData(data, spread):
         return makeWindow2D(data, spread)
+
+
+@dataclass
+class StaticWindow:
+    mask: torch.Tensor
+
+    def __call__(self, X, Y=None):
+        return self.mask
+
+    @staticmethod
+    def fromFile(path):
+        mask = []
+        with open(path, "r") as f:
+            for line in f:
+                l = []
+                for c in line:
+                    l.append(c == "X")
+                mask.append(l)
+        mask = list(reversed(mask))
+        mask = torch.Tensor(mask)
+        mask = mask.to(bool)
+        mask = torch.flatten(mask)
+        return StaticWindow(mask)
 
 
 @dataclass
