@@ -1,6 +1,8 @@
 from pathlib import Path
 from fitting.utils import getScaledEigenvecs
 import gpytorch
+from fitting.config import Config
+
 
 from .regression import DataValues
 import torch
@@ -53,7 +55,7 @@ def plotDiagnostics(save_dir, trained_model, **kwargs):
             with open(save_dir / f"{name}.json", "w") as f:
                 json.dump(obj, f)
         else:
-            ext = "pdf"
+            ext = Config.IMAGE_TYPE 
             name = name.replace("(", "").replace(")", "").replace(".", "p")
             print(name)
             obj.savefig((save_dir / name).with_suffix(f".{ext}"))
@@ -72,8 +74,16 @@ def plotDiagnostics(save_dir, trained_model, **kwargs):
 
     makePValuePlots(pred_dist, all_data, train_mask, saveFunc)
     makePosteriorPred(pred_dist, all_data, saveFunc, train_mask)
+
+    extra_noise = None
     for point in [[mt, mx / mt]]:
-        makeCovariancePlots(model, trained_model.transform, all_data, point, saveFunc)
+        makeCovariancePlots(
+            model,
+            trained_model.transform,
+            all_data,
+            point,
+            saveFunc,
+        )
 
 
 def plotCovarsForPoints(save_dir, trained_model, points):
@@ -90,7 +100,7 @@ def plotCovarsForPoints(save_dir, trained_model, points):
     for point in points:
 
         def saveFunc(name, fig):
-            ext = "pdf"
+            ext = Config.IMAGE_TYPE
             name = name.replace("(", "").replace(")", "").replace(".", "p")
             print(name)
             fig.savefig((save_dir / name).with_suffix(f".{ext}"))
@@ -125,7 +135,7 @@ def plotEigenvars(save_dir, trained_model, sig_percent=0.05):
     for i, (va, ve) in enumerate(zip(good_vals, good_vecs)):
 
         def saveFunc(name, fig):
-            ext = "pdf"
+            ext = Config.IMAGE_TYPE
             name = name.replace("(", "").replace(")", "").replace(".", "p")
             print(name)
             fig.savefig((save_dir / name).with_suffix(f".{ext}"))

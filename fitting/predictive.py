@@ -1,5 +1,7 @@
 import numpy as np
 
+from fitting.config import Config
+
 import json
 import mplhep
 import matplotlib.pyplot as plt
@@ -47,10 +49,6 @@ def getPosteriorPred(bkg_mvn, num_samples=800):
     pred = predictive(bkg_mvn)
     return pred
 
-
-
-
-def makePullPlot(E,X,Y,save_func)
 
 def makePosteriorPred(
     bkg_mvn,
@@ -205,12 +203,12 @@ def chi2PredTest(mean, variance, obs, **kwargs):
     return chi2Bins(mean, obs, variance, min_var=1)
 
 
+
 # def chi2TestStat(post_pred, obs, **kwargs):
 #     return torch.mean(post_pred, dim=-1)
 
 
 def testStatPerBin(obs, exp, var, power=2):
-
     m = var > 0
     obs, exp, var = obs[..., m], exp[..., m], var[..., m]
 
@@ -218,7 +216,6 @@ def testStatPerBin(obs, exp, var, power=2):
     # ret = obs
 
     return ret
-
 
 def plotPPD(ax, dist, obs, quantiles=(0.05, 0.16, 0.5, 0.84, 0.95)):
     import matplotlib.pyplot as plt
@@ -244,6 +241,39 @@ def plotPPD(ax, dist, obs, quantiles=(0.05, 0.16, 0.5, 0.84, 0.95)):
     addCMS(ax)
 
 
+def getPPDStats(test_stat, post_pred, posterior, data, mask=None):
+    obs_blind = data.Y[mask]
+    dist = test_stat(
+        posterior.mean[mask],
+        posterior.variance[mask],
+        post_pred[:, mask],
+    ).numpy()
+    obs_stat = test_stat(
+        posterior.mean[mask],
+        posterior.variance[mask],
+        data.Y[mask],
+    ).numpy()
+    quantile_blind = np.count_nonzero(dist < obs_stat) / dist.shape[0]
+    return dist, obs_stat, quantile_blind
+
+def getPPDStats(test_stat, post_pred, posterior, data, mask=None):
+    obs_blind = data.Y[mask]
+    dist = test_stat(
+        posterior.mean[mask],
+        posterior.variance[mask],
+        post_pred[:, mask],
+    ).numpy()
+    obs_stat = test_stat(
+        posterior.mean[mask],
+        posterior.variance[mask],
+        data.Y[mask],
+    ).numpy()
+    quantile_blind = np.count_nonzero(dist < obs_stat) / dist.shape[0]
+    return dist, obs_stat, quantile_blind
+
+
+
+
 def makePValuePlots(pred, all_data, train_mask, save_func, test_stat=chi2PredTest):
     import matplotlib.pyplot as plt
     import numpy as np
@@ -254,11 +284,10 @@ def makePValuePlots(pred, all_data, train_mask, save_func, test_stat=chi2PredTes
     obs = all_data.Y
     m = torch.ones_like(obs, dtype=bool)
 
-    dist = test_stat(pred.mean[m], pred.variance[m], post_pred[:, m]).numpy()
-    obs_stat = test_stat(pred.mean[m], pred.variance[m], all_data.Y[m]).numpy()
-    quantile = np.count_nonzero(dist < obs_stat) / dist.size
-
-
+    dist, obs_stat, quantile = getPPDStats(test_stat, post_pred, pred, all_data)
+    dist_blind, obs_stat_blind, quantile_blind = getPPDStats(
+        test_stat, post_pred, pred, all_data, mask=train_mask
+    )
     print(
         f"Predictive dist mean/median/std: {np.mean(dist):0.4f}/{np.median(dist):0.4f}/{np.std(dist):0.4f}"
     )
@@ -267,19 +296,6 @@ def makePValuePlots(pred, all_data, train_mask, save_func, test_stat=chi2PredTes
     fig, ax = plt.subplots()
     plotPPD(ax, dist, obs_stat)
     save_func("post_pred_density", fig)
-
-    obs_blind = all_data.Y[train_mask]
-    dist_blind = test_stat(
-        pred.mean[train_mask],
-        pred.variance[train_mask],
-        post_pred[:, train_mask],
-    ).numpy()
-    obs_stat_blind = test_stat(
-        pred.mean[train_mask],
-        pred.variance[train_mask],
-        all_data.Y[train_mask],
-    ).numpy()
-    quantile_blind = np.count_nonzero(dist_blind < obs_stat_blind) / dist_blind.shape[0]
 
     print(
         f"Predictive blind dist mean/median/std: {np.mean(dist_blind):0.4f}/{np.median(dist_blind):0.4f}/{np.std(dist_blind):0.4f}"
@@ -307,32 +323,18 @@ def makePValuePlots(pred, all_data, train_mask, save_func, test_stat=chi2PredTes
     }
     addCMS(ax)
     save_func("post_pred_data", data)
-
     fig, ax = plt.subplots()
     perbin = testStatPerBin(post_pred[:, m], pred.mean[m], pred.variance[m]).numpy()
     perbin_obs = testStatPerBin(all_data.Y[m], pred.mean[m], pred.variance[m]).numpy()
-    print(perbin.shape)
-    print(perbin.shape)
     perbin_quantile = np.sum(perbin < perbin_obs, axis=0) / perbin.shape[0]
     ax.set_xlabel("$m_{\\tilde{t}}$ [GeV]")
     ax.set_ylabel("$m_{\\tilde{\chi}} / m_{\\tilde{t}}$")
-    # import code
-    # import readline
-    # import rlcompleter
-    # 
-    # vars = globals()
-    # vars.update(locals())
-    # readline.set_completer(rlcompleter.Completer(vars).complete)
-    # readline.parse_and_bind("tab: complete")
-    # code.InteractiveConsole(vars).interact()
     plotRaw(
         ax,
         all_data.E,
         all_data.X,
         torch.from_numpy(perbin_quantile),
         cmap="coolwarm",
-        # cmin=0,
-        # cmax=1,
     )
     addCMS(ax)
     save_func("perbin_quantile", fig)
@@ -357,7 +359,7 @@ def makePValuePlotsFromModel(trained_model, save_dir, test_stat=None):
             with open(save_dir / f"{name}.json", "w") as f:
                 json.dump(obj, f)
         else:
-            ext = "pdf"
+            ext = Config.IMAGE_TYPE
             name = name.replace("(", "").replace(")", "").replace(".", "p")
             print(name)
             obj.savefig((save_dir / name).with_suffix(f".{ext}"))
