@@ -1,4 +1,6 @@
 import argparse
+from fitting.config import Config
+import copy
 import json
 import logging
 import gpytorch
@@ -169,7 +171,7 @@ def estimateSingle2DWithWindow(
     print(signal_hist)
 
     def saveFunc(name, fig):
-        ext = "pdf"
+        ext = Config.IMAGE_TYPE
         fig.savefig((sig_dir / name).with_suffix(f".{ext}"))
         plt.close(fig)
 
@@ -258,6 +260,8 @@ def estimateSingle2D(
     min_base_variance=None,
     extra_metadata=None,
     use_fit_as_signal=False,
+    static_window_path=None,
+    poisson_rescale=None,
     **kwargs,
 ):
     base_dir = Path(base_dir)
