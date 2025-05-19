@@ -1,6 +1,7 @@
 import logging
 import json
 from pathlib import Path
+import gpytorch
 from fitting.plotting.plot_tools import plotRaw
 
 import argparse
@@ -55,7 +56,12 @@ def createHists(
     root_file["signal"] = tensorToHist(signal_data.Y)
     root_file["data_obs"] = tensorToHist(obs.Y)
     print(vals)
-    wanted = vals >= vals[0] * sig_percent
+    print(sig_percent)
+    if sig_percent is not None:
+        wanted = vals >= vals[0] * sig_percent
+    else:
+        wanted = torch.full_like(vals, False, dtype=bool)
+        print(f"Not including systematics")
     nz = int(torch.count_nonzero(wanted))
     print(f"There are {nz} egeinvariations at least {sig_percent} of the max ")
     good_vals, good_vecs = vals[wanted], vecs[wanted]
@@ -70,35 +76,37 @@ def createHists(
         h_up = tensorToHist(raw_h_up)
         h_down = tensorToHist(raw_h_down)
 
-        if save_n_variations is not None and i < save_n_variations:
-            saveVariation(
-                signal_data.X,
-                var,
-                signal_data.E,
-                f"VAR_{i}",
-                save_dir=save_dir,
-            )
-            # saveVariation(
-            #     signal_data.X,
-            #     raw_h_up,
-            #     signal_data.E,
-            #     f"EVAR_{i}_UP",
-            #     save_dir=save_dir,
-            # )
-            # saveVariation(
-            #     signal_data.X,
-            #     raw_h_down,
-            #     signal_data.E,
-            #     f"EVAR_{i}_DOWN",
-            #     save_dir=save_dir,
-            # )
+        # if save_n_variations is not None and i < save_n_variations:
+        #     saveVariation(
+        #         signal_data.X,
+        #         var,
+        #         signal_data.E,
+        #         f"VAR_{i}",
+        #         save_dir=save_dir,
+        #     )
+        # saveVariation(
+        #     signal_data.X,
+        #     raw_h_up,
+        #     signal_data.E,
+        #     f"EVAR_{i}_UP",
+        #     save_dir=save_dir,
+        # )
+        # saveVariation(
+        #     signal_data.X,
+        #     raw_h_down,
+        #     signal_data.E,
+        #     f"EVAR_{i}_DOWN",
+        #     save_dir=save_dir,
+        # )
 
         root_file[f"bkg_estimate_EVAR_{i}Up"] = h_up
         root_file[f"bkg_estimate_EVAR_{i}Down"] = h_down
     return nz
 
 
-def createDatacard(obs, pred, signal_data, output_dir, signal_meta=None):
+def createDatacard(
+    obs, pred, signal_data, output_dir, signal_meta=None, syst_threshold=0.05
+):
     print(f"Generating combine datacard in {output_dir}")
     signal_meta = signal_meta or {}
     output_dir = Path(output_dir)
@@ -111,8 +119,8 @@ def createDatacard(obs, pred, signal_data, output_dir, signal_meta=None):
         pred,
         signal_data,
         root_file,
-        0.05,
-        save_n_variations=10,
+        syst_threshold,
+        save_n_variations=None,
         save_dir=output_dir / "evars",
     )
 
@@ -143,7 +151,9 @@ def createDatacard(obs, pred, signal_data, output_dir, signal_meta=None):
         card.addSystematic(s)
         card.setProcessSystematic(bkg, s, b1, 1)
 
-    with open(output_dir / "datacard.txt", "w") as f:
+    out_card = output_dir / "datacard.txt"
+    logger.info(f"Saving to {out_card}")
+    with open(out_card, "w") as f:
         f.write(card.dumps())
 
     metadata = {"signal_metadata": signal_meta}
@@ -170,6 +180,25 @@ def main(args):
         obs, mask = getModelingData(bkg_data)
         blinded = obs.getMasked(mask)
         pred = getPosteriorProcess(model, obs, bkg_data.transform)
+        signal_data = sig_data["signal_data"]
+
+        # import code
+        # import readline
+        # import rlcompleter
+        #
+        # vars = globals()
+        # vars.update(locals())
+        # readline.set_completer(rlcompleter.Completer(vars).complete)
+        # readline.parse_and_bind("tab: complete")
+        # code.InteractiveConsole(vars).interact()
+        if args.blind_only:
+            pred = gpytorch.distributions.MultivariateNormal(
+                pred.mean[mask],
+                pred.covariance_matrix[..., mask][mask, ...],
+            )
+            obs = blinded
+            signal_data = signal_data.getMasked(mask)
+
         _, coupling, mt, mx = signal_name.split("_")
         mt, mx = int(mt), int(mx)
         signal_metadata = dict(
@@ -180,18 +209,24 @@ def main(args):
             rate=bkg_data.metadata["signal_injected"],
         )
         (args.output / relative).mkdir(exist_ok=True, parents=True)
+
         createDatacard(
             obs,
             pred,
-            sig_data["signal_data"],
+            signal_data,
             args.output / relative,
             signal_meta=signal_metadata,
+            syst_threshold=args.syst_threshold,
         )
 
 
 def addDatacardGenerateParser(parser):
     parser.add_argument("--output")
     parser.add_argument("--base")
+    parser.add_argument("--syst-threshold", default=None, type=float)
+    parser.add_argument(
+        "--blind-only", default=True, action=argparse.BooleanOptionalAction
+    )
     parser.add_argument("inputs", nargs="+")
     parser.set_defaults(func=main)
 
