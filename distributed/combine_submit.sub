@@ -1,4 +1,4 @@
-executable      = distributed/combine_exec
+executable      = distributed/combine_exec_single
 
 universe        = vanilla
 request_cpus   = 1
@@ -14,16 +14,16 @@ stream_output=true
 
 
 
-OUTDIR=condor_combine_results_2025_04_25_srmc
-INDIR=condor_results_2025_04_25_srmc
+OUTDIR=condor_combine_results_2025_04_29_srmc_signalfit_spread2
+INDIR=condor_results_2025_04_29_srmc_signalfit_spread2
 
 should_transfer_files = YES
 when_to_transfer_output = ON_EXIT
-transfer_input_files = distributed/combine_exec,distributed/combine_script,$(INDIR)/$(SIGNAL_NAME)/$(SUB_SIG_PATH)
+transfer_input_files = distributed/combine_exec_single,distributed/combine_script_single,$(INDIR)/$(SIGPATH)
 transfer_output_files = $(OUTDIR)
 preserve_relative_paths = true
 
-arguments= $(INDIR) $(SIGNAL_NAME)/$(SUB_SIG_PATH) $(OUTDIR) 
+arguments= $(INDIR) $(SIGPATH) $(OUTDIR) 
 
-queue SIGNAL_NAME, IGNORE0, SUB_SIG_PATH, IGNORE1, IGNORE2, IGNORE3, IGNORE4 from inputs.txt
+queue SIGPATH from combine_inputs.txt
 
