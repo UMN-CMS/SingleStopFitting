@@ -20,6 +20,14 @@ def getMassArea(m):
             return y
 
 
+def getRegion(s, c, cat=None):
+    ratio = c / s
+    mapping = reversed([(0, "uncomp"), (0.7, "comp"), (0.89, "ucomp")])
+    for x, y in mapping:
+        if ratio > x:
+            return [y]
+
+
 def getCat(s, c):
     c = float(c)
     return ["comp", "uncomp"]
@@ -57,13 +65,18 @@ def main():
     ret = []
     for s, path in signal_mapping.items():
         cats = getCat(s.stop, s.chargino)
+        regions = getRegion(s.stop, s.chargino)
         area = getMassArea(s.stop)
-        for c in cats:
-            f = getFileNoCase(path, args.signal.format(area=area, cat=c, **s._asdict()))
+        for c, r in it.product(cats, regions):
+            f = getFileNoCase(
+                path, args.signal.format(area=area, cat=c, region=r, **s._asdict())
+            )
             cols = ["signal_" + "_".join(map(str, s)), f"Signal{s.coupling}", c, str(f)]
-            cols.append(args.background.format(area=area, cat=c, **s._asdict()))
+            cols.append(
+                args.background.format(area=area, region=r, cat=c, **s._asdict())
+            )
             ret.append(cols)
-    for cols, inject,spread in it.product(ret, args.injections, args.spreads):
+    for cols, inject, spread in it.product(ret, args.injections, args.spreads):
         print(" ".join(map(str, (*cols, inject, spread))))
 
 
