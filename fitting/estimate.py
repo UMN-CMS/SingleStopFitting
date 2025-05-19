@@ -277,6 +277,17 @@ def estimateSingle2D(
 
     logger.info(bkg_hist)
     logger.info(f"Post scale background is ")
+    if poisson_rescale:
+        import numpy as np
+
+        logger.info(f"Rescaling by {poisson_rescale} and preserving poisson statistics")
+
+        bkg_hist = bkg_hist.copy(deep=True)
+        print(bkg_hist)
+        v = copy.deepcopy(bkg_hist.view(flow=False).value)
+        new = v*poisson_rescale
+        bkg_hist[...] = np.stack([new,new], axis=-1)
+        print(bkg_hist)
 
     if min_base_variance:
         import numpy as np
@@ -451,6 +462,8 @@ def main(args):
         inject_other_signals=args.inject_other_signals,
         extra_metadata=extra_metadata,
         no_contamination=args.no_contamination,
+        poisson_rescale=args.poisson_rescale,
+        static_window_path=args.static_window_path,
     )
 
 
@@ -476,6 +489,7 @@ def addToParser(parser):
     parser.add_argument("--rebin-background", default=1, type=int, help="Rebinning")
     parser.add_argument("-r", "--region", type=str, help="Region", required=True)
     parser.add_argument("-l", "--learning-rate", type=float, default=0.02)
+    parser.add_argument("--poisson-rescale", type=float, default=None)
     parser.add_argument("--injected", type=float, nargs="*", default=[0.0])
     parser.add_argument("-i", "--iterations", type=int, default=100)
     parser.add_argument("--cuda", action="store_true", help="Use cuda", default=False)
