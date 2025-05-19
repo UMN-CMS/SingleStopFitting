@@ -17,23 +17,33 @@ def formatSignal(sid):
     return f"$\lambda''_{{{sid.coupling}}}-{sid.mt},{sid.mx}$ {sid.algo}"
 
 
+def extractAndMakeRelative(data, signal_id):
+
+    ret = np.array(
+        sorted(
+            [
+                (x["signal_injected"], (x.get("fit") or {"r": None})["r"])
+                for x in data[signal_id]["injections"]
+            ]
+        )
+    )
+    if not np.any(ret[:, 1]):
+        return None
+    ret = ret[ret[:, 1] != np.array(None)]
+    ret[:, 1] = ret[:, 1] - (ret[0, 1] or 0)
+    return ret
+
+
 def plotRates(data, signal_ids, output_path, coupling="312"):
     data = {
-        signal_id: np.array(
-            sorted(
-                [
-                    (x["signal_injected"], (x.get("fit") or {"r": None})["r"])
-                    for x in data[signal_id]["injections"]
-                ]
-            )
-        )
-        for signal_id in signal_ids
+        signal_id: extractAndMakeRelative(data, signal_id) for signal_id in signal_ids
     }
     mplhep.style.use("CMS")
 
     fig, ax = plt.subplots()
     for title, points in data.items():
-        print(points)
+        if points is None:
+            continue
         points = points[(points[:, 1]) != np.array(None)]
         ax.plot(points[:, 0], points[:, 1], "o-", label=formatSignal(title))
     ax.plot([0, 16], [0, 16], "--", color="gray", label="y=x")
@@ -90,7 +100,7 @@ def main():
     #     data = json.load(f)
 
     # plotRate(data, args.output, coupling=args.coupling)
-    with open("gathered/srmc_gathered.json", "r") as f:
+    with open("gathered/srmc_signalfit_spread2_gathered.json", "r") as f:
         data = json.load(f)
     data = {SignalId(**x["signal_info"]): x for x in data}
     points = [
@@ -98,15 +108,15 @@ def main():
         SignalId("uncomp", "312", 1000, 400),
         SignalId("uncomp", "312", 1200, 400),
         SignalId("uncomp", "312", 1300, 600),
-        SignalId("uncomp", "312", 1400, 400),
+        # SignalId("uncomp", "312", 1400, 400),
         SignalId("uncomp", "312", 1500, 400),
         SignalId("uncomp", "312", 1500, 600),
         SignalId("uncomp", "312", 2000, 400),
         SignalId("uncomp", "312", 2000, 1200),
         SignalId("comp", "312", 1300, 1200),
-        SignalId("comp", "312", 1500, 1400),
-        SignalId("comp", "312", 1400, 1300),
-        SignalId("comp", "312", 2000, 1900),
+        SignalId("comp", "312", 1500, 1450),
+        # SignalId("comp", "312", 1400, 1300),
+        # SignalId("comp", "312", 2000, 1900),
     ]
     # data[SignalId("uncomp", "312", "1200", "400")]
     plotInjectedRates(data, points, "deletemelater/rates_asimov_312.png", coupling=312)
