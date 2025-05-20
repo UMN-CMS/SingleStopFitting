@@ -86,6 +86,16 @@ def makePosteriorPred(
 
     fig, ax = plt.subplots(layout="tight")
     # ax.set_title("Relative Uncertainty In Pred")
+    f = plotRaw(ax, test_data.E, test_data.X, summ["observed"]["std"]**2 )
+    ax.set_xlabel("$m_{\\tilde{t}}$ [GeV]")
+    ax.set_ylabel("$m_{\\tilde{\chi}} / m_{\\tilde{t}}$")
+    addWindow(ax)
+    addChi2(ax)
+    addCMS(ax)
+    save_func("post_variance", fig)
+
+    fig, ax = plt.subplots(layout="tight")
+    # ax.set_title("Relative Uncertainty In Pred")
     f = plotRaw(
         ax,
         test_data.E,
@@ -203,7 +213,6 @@ def chi2PredTest(mean, variance, obs, **kwargs):
     return chi2Bins(mean, obs, variance, min_var=1)
 
 
-
 # def chi2TestStat(post_pred, obs, **kwargs):
 #     return torch.mean(post_pred, dim=-1)
 
@@ -216,6 +225,7 @@ def testStatPerBin(obs, exp, var, power=2):
     # ret = obs
 
     return ret
+
 
 def plotPPD(ax, dist, obs, quantiles=(0.05, 0.16, 0.5, 0.84, 0.95)):
     import matplotlib.pyplot as plt
@@ -256,6 +266,7 @@ def getPPDStats(test_stat, post_pred, posterior, data, mask=None):
     quantile_blind = np.count_nonzero(dist < obs_stat) / dist.shape[0]
     return dist, obs_stat, quantile_blind
 
+
 def getPPDStats(test_stat, post_pred, posterior, data, mask=None):
     obs_blind = data.Y[mask]
     dist = test_stat(
@@ -270,8 +281,6 @@ def getPPDStats(test_stat, post_pred, posterior, data, mask=None):
     ).numpy()
     quantile_blind = np.count_nonzero(dist < obs_stat) / dist.shape[0]
     return dist, obs_stat, quantile_blind
-
-
 
 
 def makePValuePlots(pred, all_data, train_mask, save_func, test_stat=chi2PredTest):

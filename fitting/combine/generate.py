@@ -1,11 +1,22 @@
 import logging
+import matplotlib.pyplot as plt
+from fitting.plotting.plot_tools import plotRaw
+from fitting.config import Config
 import json
 from pathlib import Path
 import gpytorch
 from fitting.plotting.plot_tools import plotRaw
 
 import argparse
+
+import pyro
+import pyro.distributions as pyrod
+import pyro.infer as pyroi
 import numpy as np
+import code
+import readline
+import rlcompleter
+#
 
 import torch
 import uproot
@@ -18,6 +29,15 @@ torch.set_default_dtype(torch.float64)
 
 
 logger = logging.getLogger(__name__)
+
+
+def decomposedModel(variations):
+    cv = pyro.sample(
+        "normals",
+        pyrod.Normal(torch.zeros(variations.shape[0]), torch.ones(variations.size(0))),
+    )
+    ret = torch.sum(variations * torch.unsqueeze(cv, dim=-1), axis=0)
+    return pyro.deterministic("obs", ret)
 
 
 def tensorToHist(array):
@@ -66,41 +86,54 @@ def createHists(
     print(f"There are {nz} egeinvariations at least {sig_percent} of the max ")
     good_vals, good_vecs = vals[wanted], vecs[wanted]
     print(torch.max(torch.sqrt(vals)))
+    all_vars = []
     for i, (va, ve) in enumerate(zip(good_vals, good_vecs)):
         v = torch.sqrt(va)
-        # print(f"Magnitude is {torch.abs(v).max()}")
+        # v = va
+        print(f"Eigval is {v}, norm is {torch.linalg.vector_norm(ve)}")
 
         var = v * ve
-        raw_h_up = torch.clip(mean + var, min=0, max=None)
-        raw_h_down = torch.clip(mean - var, min=0, max=None)
+
+        all_vars.append(var)
+        # raw_h_up = torch.clip(mean + var, min=0, max=None)
+        # raw_h_down = torch.clip(mean - var, min=0, max=None)
+        raw_h_up = mean + var
+        raw_h_down = mean - var
         h_up = tensorToHist(raw_h_up)
         h_down = tensorToHist(raw_h_down)
 
-        # if save_n_variations is not None and i < save_n_variations:
-        #     saveVariation(
-        #         signal_data.X,
-        #         var,
-        #         signal_data.E,
-        #         f"VAR_{i}",
-        #         save_dir=save_dir,
-        #     )
-        # saveVariation(
-        #     signal_data.X,
-        #     raw_h_up,
-        #     signal_data.E,
-        #     f"EVAR_{i}_UP",
-        #     save_dir=save_dir,
-        # )
-        # saveVariation(
-        #     signal_data.X,
-        #     raw_h_down,
-        #     signal_data.E,
-        #     f"EVAR_{i}_DOWN",
-        #     save_dir=save_dir,
-        # )
+        if save_n_variations is not None and i < save_n_variations:
+            logger.info(f"Saving variation {i}")
+            saveVariation(
+                signal_data.X,
+                var,
+                signal_data.E,
+                f"VAR_{i}",
+                save_dir=save_dir,
+            )
+            saveVariation(
+                signal_data.X,
+                raw_h_up,
+                signal_data.E,
+                f"EVAR_{i}_UP",
+                save_dir=save_dir,
+            )
+            saveVariation(
+                signal_data.X,
+                raw_h_down,
+                signal_data.E,
+                f"EVAR_{i}_DOWN",
+                save_dir=save_dir,
+            )
 
         root_file[f"bkg_estimate_EVAR_{i}Up"] = h_up
         root_file[f"bkg_estimate_EVAR_{i}Down"] = h_down
+
+    all_vars = torch.stack(all_vars)
+    predictive = pyroi.Predictive(decomposedModel, num_samples=800)
+    pred = predictive(all_vars)
+    v = torch.var(pred["obs"], axis=0)
+    saveVariation(signal_data.X, v, signal_data.E, f"Recomposed", save_dir=save_dir)
     return nz
 
 
@@ -120,7 +153,7 @@ def createDatacard(
         signal_data,
         root_file,
         syst_threshold,
-        save_n_variations=None,
+        save_n_variations=2,
         save_dir=output_dir / "evars",
     )
 
@@ -191,6 +224,22 @@ def main(args):
         # readline.set_completer(rlcompleter.Completer(vars).complete)
         # readline.parse_and_bind("tab: complete")
         # code.InteractiveConsole(vars).interact()
+
+        save_dir = args.output / relative
+        save_dir.mkdir(exist_ok=True, parents=True)
+
+        def saveFunc(name, obj):
+            import json
+
+            if isinstance(obj, dict):
+                with open(save_dir / f"{name}.json", "w") as f:
+                    json.dump(obj, f)
+            else:
+                ext = Config.IMAGE_TYPE
+                name = name.replace("(", "").replace(")", "").replace(".", "p")
+                obj.savefig((save_dir / name).with_suffix(f".{ext}"))
+                plt.close(obj)
+
         if args.blind_only:
             pred = gpytorch.distributions.MultivariateNormal(
                 pred.mean[mask],
@@ -208,7 +257,9 @@ def main(args):
             mass_chargino=mx,
             rate=bkg_data.metadata["signal_injected"],
         )
-        (args.output / relative).mkdir(exist_ok=True, parents=True)
+        fig, ax = plt.subplots()
+        plotRaw(ax, signal_data.E, signal_data.X, pred.variance)
+        saveFunc("combine_post_variance", fig)
 
         createDatacard(
             obs,

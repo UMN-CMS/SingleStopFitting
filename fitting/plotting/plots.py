@@ -160,7 +160,7 @@ def makeNNPlots(model, test_data):
     return ret
 
 
-def makeCovariancePlots(model, transform, data, point, save_func):
+def makeCovariancePlots(model, transform, data, point, save_func, extra_noise=None):
     mod = model.covar_module
     p = transform.transform_x.transformData(torch.tensor(point))
     d = transform.transform(data)
