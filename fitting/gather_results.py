@@ -17,7 +17,8 @@ import uproot
 from collections import namedtuple
 
 
-SignalId = namedtuple("SignalId", "algo coupling mt mx")
+#SignalId = namedtuple("SignalId", "algo coupling mt mx")
+SignalId = namedtuple("SignalId", "coupling mt mx spread")
 
 logger = logging.getLogger(__name__)
 
@@ -28,13 +29,11 @@ class InjectionResult(BaseModel):
     regression_plots: dict[str, str]
 
 
-class SignalResult(BaseModel):
-    signal_id: SignalId
-    signal_metadata: dict
-
-
 def idFromMeta(data):
-    return SignalId(data["algo"], data["coupling"], data["mt"], data["mx"])
+    return SignalId(
+        #data["algo"],
+        data["coupling"], data["mt"], data["mx"], data["window_spread"]
+    )
 
 
 def loadOneGPR(directory):
@@ -43,7 +42,6 @@ def loadOneGPR(directory):
     metadata_path = directory / "metadata.json"
     chi_path = directory / "chi2_info.json"
     post_pred_path = directory / "post_pred_data.json"
-
 
     try:
         with open(metadata_path, "r") as f:
@@ -67,7 +65,12 @@ def loadOneGPR(directory):
 
     plots = {
         x.stem: str(x)
-        for x in it.chain(directory.glob("*.pdf"), directory.parent.glob("*.pdf"))
+        for x in it.chain(
+            directory.glob("*.pdf"),
+            directory.parent.glob("*.pdf"),
+            directory.glob("*.png"),
+            directory.parent.glob("*.png"),
+        )
     }
     plots["covar_center"] = next(
         (y for x, y in plots.items() if "covariance_" in x), None
@@ -164,7 +167,7 @@ class ExtractSigInject(object):
             logger.debug(f"Attempting to load fit from {f}")
             if not f.exists():
                 logger.debug(f"Failed to load significance from {f}")
-                val= None
+                val = None
             else:
                 val = extractProperty(f, "limit")
             logger.debug(f)
@@ -175,6 +178,7 @@ class ExtractSigInject(object):
                 val = None
             ret.append((v, val))
         return ret
+
 
 class ExtractRateInject(object):
     def __init__(self, name, tag, vals=(1, 4, 9, 16), for_inject=None):
@@ -194,7 +198,7 @@ class ExtractRateInject(object):
             logger.debug(f"Attempting to load fit from {f}")
             if not f.exists():
                 logger.debug(f"Failed to load fit from {f}")
-                val= None
+                val = None
             else:
                 val = extractProperty(f, "r")
             logger.debug(f)
@@ -205,7 +209,6 @@ class ExtractRateInject(object):
                 val = None
             ret.append((v, val))
         return ret
-
 
 
 class ExtractLimit(object):
@@ -256,8 +259,6 @@ def loadOneCombine(directory):
         except Exception as e:
             data[extractor.name] = None
 
-            
-
     all_data["data"] = data
     return all_data
 
@@ -284,12 +285,13 @@ def main(args):
             try:
                 item = gathered[c["signal_id"]]
                 i = c["metadata"]["signal_injected"]
-                injected = next(x for x in item["injections"] if x["signal_injected"] == i)
+                injected = next(
+                    x for x in item["injections"] if x["signal_injected"] == i
+                )
                 injected.update(c["data"])
             except Exception as e:
                 logger.warn(f"Failed to gather for combine")
                 pass
-                
 
     gathered = list(gathered.values())
 

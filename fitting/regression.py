@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from typing import Any
 import code
 import readline
 import rlcompleter
@@ -51,7 +52,7 @@ class TrainedModel:
     blind_mask: torch.Tensor
 
     transform: torch.Tensor
-    metadata: dict
+    metadata: Any
 
     training_progress: dict
 

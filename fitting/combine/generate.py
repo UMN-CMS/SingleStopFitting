@@ -75,8 +75,6 @@ def createHists(
     root_file["bkg_estimate"] = tensorToHist(mean)
     root_file["signal"] = tensorToHist(signal_data.Y)
     root_file["data_obs"] = tensorToHist(obs.Y)
-    print(vals)
-    print(sig_percent)
     if sig_percent is not None:
         wanted = vals >= vals[0] * sig_percent
     else:
@@ -85,12 +83,10 @@ def createHists(
     nz = int(torch.count_nonzero(wanted))
     print(f"There are {nz} egeinvariations at least {sig_percent} of the max ")
     good_vals, good_vecs = vals[wanted], vecs[wanted]
-    print(torch.max(torch.sqrt(vals)))
     all_vars = []
     for i, (va, ve) in enumerate(zip(good_vals, good_vecs)):
         v = torch.sqrt(va)
         # v = va
-        print(f"Eigval is {v}, norm is {torch.linalg.vector_norm(ve)}")
 
         var = v * ve
 
@@ -274,7 +270,7 @@ def main(args):
 def addDatacardGenerateParser(parser):
     parser.add_argument("--output")
     parser.add_argument("--base")
-    parser.add_argument("--syst-threshold", default=None, type=float)
+    parser.add_argument("--syst-threshold", default=0.0, type=float)
     parser.add_argument(
         "--blind-only", default=True, action=argparse.BooleanOptionalAction
     )

@@ -1,4 +1,6 @@
-from dataclasses import dataclass
+from pydantic import BaseModel, ConfigDict
+import json
+from .core import TorchTensor, Metadata
 
 import numpy as np
 import torch
@@ -57,25 +59,26 @@ def makeWindow2D(signal_data, spread=1.0):
     )
 
     return GaussianWindow2D(
-        torch.tensor(popt[0]),
-        torch.tensor(popt[1:3]),
-        torch.tensor(popt[3:5]),
-        torch.tensor([popt[5]]),
-        spread,
-        s,
+        amplitude=torch.tensor(popt[0]),
+        center=torch.tensor(popt[1:3]),
+        sigma=torch.tensor(popt[3:5]),
+        theta=torch.tensor([popt[5]]),
+        spread=spread,
+        normalization_scale=s,
     )
 
 
-@dataclass
-class GaussianWindow2D:
+class GaussianWindow2D(BaseModel):
     amplitude: float
-    center: torch.Tensor
-    sigma: torch.Tensor
-    theta: float
+    center: TorchTensor
+    sigma: TorchTensor
+    theta: TorchTensor
 
     spread: float
 
-    normalization_scale: torch.Tensor
+    normalization_scale: TorchTensor
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
 
     def vals(self, X):
         X = X / self.normalization_scale
@@ -96,9 +99,10 @@ class GaussianWindow2D:
         return makeWindow2D(data, spread)
 
 
-@dataclass
-class StaticWindow:
-    mask: torch.Tensor
+class StaticWindow(BaseModel):
+    mask: TorchTensor
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
 
     def __call__(self, X, Y=None):
         return self.mask
@@ -119,9 +123,10 @@ class StaticWindow:
         return StaticWindow(mask)
 
 
-@dataclass
-class MinYCut:
+class MinYCut(BaseModel):
     min_y: float = 0
 
     def __call__(self, X, Y=None):
         return Y > self.min_y
+
+Metadata.model_rebuild()

@@ -22,7 +22,8 @@ logger = logging.getLogger(__name__)
 def plotDiagnostics(save_dir, trained_model, **kwargs):
     model = regression.loadModel(trained_model)
     tm = trained_model.metadata
-    coupling, mt, mx = tm["coupling"], tm["mt"], tm["mx"]
+    sp = tm.signal_point
+    coupling, mt, mx = sp.coupling, sp.mt, sp.mx
     mt, mx = float(mt), float(mx)
     all_data, train_mask = regression.getModelingData(trained_model)
     pred_dist = regression.getPosteriorProcess(model, all_data, trained_model.transform)
@@ -55,7 +56,7 @@ def plotDiagnostics(save_dir, trained_model, **kwargs):
             with open(save_dir / f"{name}.json", "w") as f:
                 json.dump(obj, f)
         else:
-            ext = Config.IMAGE_TYPE 
+            ext = Config.IMAGE_TYPE
             name = name.replace("(", "").replace(")", "").replace(".", "p")
             print(name)
             obj.savefig((save_dir / name).with_suffix(f".{ext}"))

@@ -1,6 +1,7 @@
 import numpy as np
 
 from fitting.config import Config
+from pydantic import BaseModel
 
 import json
 import mplhep
@@ -18,7 +19,6 @@ from .plotting.plot_tools import getPolyFromSquares, makeSquares
 from .plotting.plots import plotRaw
 from .plotting.annots import addCMS
 from .utils import chi2Bins
-
 
 def summary(samples):
     site_stats = {}

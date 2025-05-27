@@ -1,6 +1,9 @@
 import argparse
+from .core import FitParams, SignalPoint, FitRegion, Metadata
 from fitting.config import Config
+from pydantic import BaseModel, BeforeValidator, ConfigDict, PlainSerializer, ConfigDict
 import copy
+from typing import Any
 import json
 import logging
 import gpytorch
@@ -22,7 +25,6 @@ import torch
 from . import models, regression
 from .blinder import GaussianWindow2D, MinYCut, StaticWindow
 from .plotting.plots import windowPlots2D
-
 
 torch.set_default_dtype(torch.float64)
 
@@ -167,9 +169,6 @@ def estimateSingle2DWithWindow(
     sig_dir.mkdir(exist_ok=True, parents=True)
     signal_regression_data = DataValues.fromHistogram(signal_hist)
 
-    print(bkg_hist)
-    print(signal_hist)
-
     def saveFunc(name, fig):
         ext = Config.IMAGE_TYPE
         fig.savefig((sig_dir / name).with_suffix(f".{ext}"))
@@ -193,24 +192,31 @@ def estimateSingle2DWithWindow(
 
     torch.save(sd, sig_dir / "signal_data.pth")
     _, coupling, stop, chi = signal_name.split("_")
-    model_data = {
-        "coupling": coupling,
-        "mt": int(stop),
-        "mx": int(chi),
-        "x_bounds": [
-            float(signal_regression_data.X[:, 0].min()),
-            float(signal_regression_data.X[:, 0].max()),
-        ],
-        "y_bounds": [
-            float(signal_regression_data.X[:, 1].min()),
-            float(signal_regression_data.X[:, 1].max()),
-        ],
-    }
 
-    model_data.update(extra_metadata)
+    fr = FitRegion(
+        stop_bounds=torch.aminmax(signal_regression_data.X[:, 0]),
+        ratio_bounds=torch.aminmax(signal_regression_data.X[:, 1]),
+    )
+
+    signal_point = SignalPoint(
+        coupling=coupling,
+        mt=stop,
+        mx=chi,
+    )
 
     for r in signal_injections:
-        print(window)
+        fp = FitParams(
+            iterations=iterations, learning_rate=learning_rate, injected_signal=r
+        )
+
+        metadata = Metadata(
+            signal_point=signal_point,
+            fit_region=fr,
+            fit_params=fp,
+            window=window,
+            other_data=extra_metadata,
+        )
+
         save_dir = sig_dir / f"inject_r_{str(round(r,3)).replace('.','p')}"
         meta = {"signal_name": signal_name}
         save_dir.mkdir(exist_ok=True, parents=True)
@@ -234,12 +240,10 @@ def estimateSingle2DWithWindow(
                 iterations=iterations,
                 learning_rate=learning_rate,
             )
-        this_injection_data = {**model_data, "signal_injected": r}
-        trained_model.metadata.update(this_injection_data)
+        trained_model.metadata = metadata
         with open(save_dir / "metadata.json", "w") as f:
-            json.dump(this_injection_data, f, indent=2)
+            f.write(metadata.model_dump_json())
 
-        # trained_model.metadata.update(add_metadata)
         torch.save(trained_model, save_dir / "bkg_estimation_result.pth")
         plotDiagnostics(save_dir, trained_model)
 
@@ -265,6 +269,7 @@ def estimateSingle2D(
     **kwargs,
 ):
     base_dir = Path(base_dir)
+    extra_metadata = extra_metadata or {}
 
     with open(signal_path, "rb") as f:
         signal_file = pkl.load(f)
@@ -289,8 +294,8 @@ def estimateSingle2D(
         bkg_hist = bkg_hist.copy(deep=True)
         print(bkg_hist)
         v = copy.deepcopy(bkg_hist.view(flow=False).value)
-        new = v*poisson_rescale
-        bkg_hist[...] = np.stack([new,new], axis=-1)
+        new = v * poisson_rescale
+        bkg_hist[...] = np.stack([new, new], axis=-1)
         print(bkg_hist)
 
     if min_base_variance:
@@ -339,6 +344,10 @@ def estimateSingle2D(
                 window = GaussianWindow2D.fromData(
                     signal_regression_data, spread=window_spread
                 )
+            d = window.model_dump()
+            print(d)
+            print(GaussianWindow2D(**d))
+            extra_metadata["window_spread"] = window_spread
         except (scipy.optimize.OptimizeWarning, RuntimeError) as e:
             raise e
             window = None

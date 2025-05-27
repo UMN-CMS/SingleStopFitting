@@ -30,11 +30,11 @@ def getRegion(s, c, cat=None):
 
 def getCat(s, c):
     c = float(c)
-    return ["comp", "uncomp"]
-    if c / s > 0.8:
+    # return ["comp", "uncomp"]
+    if c / s > 0.66:
         return ["comp"]
-    elif c / s > 0.6:
-        return ["comp", "uncomp"]
+    # elif c / s > 0.6:
+    #     return ["comp", "uncomp"]
     else:
         return ["uncomp"]
 
@@ -45,6 +45,8 @@ def parseArgs():
     parser.add_argument("-o", "--output", type=str, help="Output file name")
     parser.add_argument("-b", "--background")
     parser.add_argument("-s", "--signal")
+    parser.add_argument("--subpath", type=str, default="{cat}")
+    parser.add_argument("--background-toys", type=int, default=None)
     parser.add_argument("-i", "--injections", nargs="+", type=float, required=True)
     parser.add_argument("--spreads", nargs="+", type=float, required=True)
 
@@ -63,21 +65,38 @@ def main():
     inputs = [Path(x) for x in args.inputs]
     signal_mapping = {getSignalParts(x): x for x in inputs}
     ret = []
+    bt = args.background_toys or 1
     for s, path in signal_mapping.items():
         cats = getCat(s.stop, s.chargino)
         regions = getRegion(s.stop, s.chargino)
         area = getMassArea(s.stop)
-        for c, r in it.product(cats, regions):
+        for c, r, t, inject, spread in it.product(
+            cats, regions, range(bt), args.injections, args.spreads
+        ):
+            vals = dict(
+                area=area,
+                cat=c,
+                region=r,
+                **s._asdict(),
+                toy=t,
+                spread=spread,
+                inject=inject,
+            )
+
             f = getFileNoCase(
-                path, args.signal.format(area=area, cat=c, region=r, **s._asdict())
+                path,
+                args.signal.format(**vals),
             )
-            cols = ["signal_" + "_".join(map(str, s)), f"Signal{s.coupling}", c, str(f)]
-            cols.append(
-                args.background.format(area=area, region=r, cat=c, **s._asdict())
-            )
-            ret.append(cols)
-    for cols, inject, spread in it.product(ret, args.injections, args.spreads):
-        print(" ".join(map(str, (*cols, inject, spread))))
+            cols = [
+                "signal_" + "_".join(map(str, s)),
+                f"Signal{s.coupling}",
+                args.subpath.format(**vals).replace(".","p"),
+                str(f),
+            ]
+            cols.append(args.background.format(**vals))
+            cols += [str(inject), str(spread)]
+            ret.append(" ".join(cols))
+    print("\n".join(ret))
 
 
 if __name__ == "__main__":
