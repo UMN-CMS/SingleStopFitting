@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-background_dir="backgrounds/background_2025_05_02"
+background_dir="backgrounds/background_2025_06_13_rbf"
 
 low=500,1700
 med=800,2200
@@ -75,7 +75,7 @@ function makeForCoupling(){
 }
 
 
-# makeForCoupling Signal312 qcd_inclusive_2018
-# makeForCoupling Signal313 qcd_inclusive_2018
+makeForCoupling Signal312 qcd_inclusive_2018
+makeForCoupling Signal313 qcd_inclusive_2018
 makeForCoupling Control data_JetHT_2018 --only-clip
 
