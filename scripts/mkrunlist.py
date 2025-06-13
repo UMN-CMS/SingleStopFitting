@@ -31,7 +31,7 @@ def getRegion(s, c, cat=None):
 def getCat(s, c):
     c = float(c)
     # return ["comp", "uncomp"]
-    if c / s > 0.66:
+    if c / s > 0.75:
         return ["comp"]
     # elif c / s > 0.6:
     #     return ["comp", "uncomp"]
