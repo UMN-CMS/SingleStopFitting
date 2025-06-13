@@ -1,6 +1,8 @@
 from pydantic import BaseModel, ConfigDict
 import json
-from .core import TorchTensor, Metadata
+from fitting.extra_types import TorchTensor
+
+# from .core import TorchTensor, Metadata
 
 import numpy as np
 import torch
@@ -68,7 +70,12 @@ def makeWindow2D(signal_data, spread=1.0):
     )
 
 
-class GaussianWindow2D(BaseModel):
+class Window(BaseModel):
+    def __call__(self, X, Y=None):
+        pass
+
+
+class GaussianWindow2D(Window):
     amplitude: float
     center: TorchTensor
     sigma: TorchTensor
@@ -99,7 +106,7 @@ class GaussianWindow2D(BaseModel):
         return makeWindow2D(data, spread)
 
 
-class StaticWindow(BaseModel):
+class StaticWindow(Window):
     mask: TorchTensor
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
@@ -123,10 +130,38 @@ class StaticWindow(BaseModel):
         return StaticWindow(mask)
 
 
-class MinYCut(BaseModel):
+class MinYCut(Window):
     min_y: float = 0
 
     def __call__(self, X, Y=None):
         return Y > self.min_y
 
-Metadata.model_rebuild()
+
+class MaxXCut(Window):
+    max_x: TorchTensor
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    def __call__(self, X, Y=None):
+        return torch.all(X < torch.unsqueeze(self.max_x, 0), dim=-1)
+
+class MinXCut(Window):
+    max_x: TorchTensor
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    def __call__(self, X, Y=None):
+        return torch.all(X > torch.unsqueeze(self.max_x, 0), dim=-1)
+
+
+class WindowAnd(Window):
+    window_1: Window
+    window_2: Window
+
+    def __call__(self, X, Y=None):
+        return self.window_1(X, Y=Y) & self.window_2(X, Y=Y)
+
+
+# Metadata.model_rebuild()
+# SignalRun.model_rebuild()
+# .model_rebuild()

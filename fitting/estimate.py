@@ -23,7 +23,14 @@ import mplhep
 import torch
 
 from . import models, regression
-from .blinder import GaussianWindow2D, MinYCut, StaticWindow
+from .blinder import (
+    GaussianWindow2D,
+    MinYCut,
+    StaticWindow,
+    MaxXCut,
+    WindowAnd,
+    MinXCut,
+)
 from .plotting.plots import windowPlots2D
 
 torch.set_default_dtype(torch.float64)
@@ -136,6 +143,13 @@ def regress(
         data,
         model,
         MinYCut(min_y=min_counts),
+        # WindowAnd(
+        #     window_1=WindowAnd(
+        #         window_1=MinYCut(min_y=min_counts),
+        #         window_2=MaxXCut(max_x=torch.tensor([100000.0, 0.95])),
+        #     ),
+        #     window_2=MinXCut(max_x=torch.tensor([-20.0, 0.7])),
+        # ),
         window,
         iterations=iterations,
         use_cuda=use_cuda,
