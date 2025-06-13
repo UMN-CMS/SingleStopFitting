@@ -210,7 +210,7 @@ def chiTestStat(post_pred, obs, **kwargs):
 
 def chi2PredTest(mean, variance, obs, **kwargs):
     # return post_pred.mean(dim=-1)
-    return chi2Bins(mean, obs, variance, min_var=1)
+    return chi2Bins(mean, obs, variance, min_var=0)
 
 
 # def chi2TestStat(post_pred, obs, **kwargs):
@@ -278,7 +278,9 @@ def getPPDStats(test_stat, post_pred, posterior, data, mask=None):
         posterior.mean[mask],
         posterior.variance[mask],
         data.Y[mask],
+
     ).numpy()
+
     quantile_blind = np.count_nonzero(dist < obs_stat) / dist.shape[0]
     return dist, obs_stat, quantile_blind
 
