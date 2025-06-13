@@ -8,8 +8,8 @@ ls -alhtr
 python3 -m fitting.cli estimate "$@"
 python3 -m fitting.cli make-datacard --base $OUTDIR --output $OUTDIR $OUTDIR/**/bkg_estimation_result.pth 
 
-for f in **/*0p0*/bkg_estimation_result.pth; do
-    python3 -m fitting.cli model-checks -o "${f##*/}" $f
-done
+# for f in **/*0p0*/bkg_estimation_result.pth; do
+#     python3 -m fitting.cli model-checks -o "${f##*/}" $f
+# done
 
 

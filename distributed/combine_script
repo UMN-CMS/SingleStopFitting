@@ -17,14 +17,18 @@ function printAndRun(){
     $@
 }
 
+echo "Making directory '$dest'"
 mkdir -p $dest
 (
     cd $base
+    echo "Transfering files to destination"
     find $signal -iname '*.root' | xargs -i cp --parents {} $dest
     find $signal -iname '*.txt'  | xargs -i cp --parents {}  $dest
     find $signal -iname '*.json'  | xargs -i cp --parents {}  $dest
 )
 
+ls -alhtr $dest/
+ls -alhtr $dest/$signal/
 ls -alhtr $dest/$signal/inject_r_1p0/
 
 echo "STARTING COMBINE"
@@ -32,7 +36,6 @@ echo "STARTING COMBINE"
 common_opts="--rMin=-5 --rMax=20 --cminDefaultMinimizerStrategy 1 --cminFallbackAlgo Minuit2,Migrad,0:0.1 --cminFallbackAlgo Minuit2,Migrad,1:1.0 --cminFallbackAlgo Minuit2,Migrad,0:1.0 --X-rtd MINIMIZER_MaxCalls=999999999 --X-rtd MINIMIZER_analytic  --X-rtd FAST_VERTICAL_MORPH"
 
 # combineTool.py -M T2W -d $dest/$signal/*/datacard.txt  
-
 
 function runSignal(){
     local base=$dest/$signal/inject_r_$1p0/

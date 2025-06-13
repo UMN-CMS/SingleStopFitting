@@ -16,17 +16,17 @@ log             = logs/log.$(cluster).$(process)
 stream_error=true
 stream_output=true
 
-OUTDIR=condor_results_2025_05_01_srmc_signalfit/$(SIGNAL_NAME)/$(SUB_SIG_PATH)
+OUTDIR=condor_results_2025_06_12_srmc/$(SIGNAL_NAME)/$(SUB_SIG_PATH)
 
 environment = "OUTDIR=$(OUTDIR)"
 
 should_transfer_files = YES
 when_to_transfer_output = ON_EXIT
-transfer_input_files = fitting,temp/env.tar.gz,setup.sh,backgrounds/background_2025_04_29/,$(SIGNAL_PATH)
+transfer_input_files = fitting,temp/env.tar.gz,setup.sh,backgrounds/background_2025_06_12/,$(SIGNAL_PATH)
 transfer_output_files = $(OUTDIR)
 preserve_relative_paths = true
 
-arguments= -o $(OUTDIR) -b $(BACKGROUND_PATH) -s $(SIGNAL_PATH)  -n $(SIGNAL_NAME) -r $(REGION) -l 0.04 --injected $(INJECTION) --metadata algo=$(SUB_SIG_PATH) --spread $(SPREAD) --use-fit-as-signal
+arguments= -o $(OUTDIR) -b $(BACKGROUND_PATH) -s $(SIGNAL_PATH)  -n $(SIGNAL_NAME) -r $(REGION) -l 0.04 --injected $(INJECTION) --metadata algo=$(SUB_SIG_PATH) --spread $(SPREAD) 
 
 queue SIGNAL_NAME, REGION, SUB_SIG_PATH, SIGNAL_PATH, BACKGROUND_PATH, INJECTION, SPREAD from inputs.txt
 
