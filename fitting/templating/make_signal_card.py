@@ -5,7 +5,7 @@ from pathlib import Path
 import json
 import argparse
 from rich import print
-from fitting.gather_results import SignalId
+from fitting.core import signal_run_list_adapter
 
 
 # def loadOneMeta(p):
@@ -26,18 +26,27 @@ from fitting.gather_results import SignalId
 def parseArgs():
     parser = argparse.ArgumentParser()
     parser.add_argument("input")
-    parser.add_argument("-o","--output")
+    parser.add_argument("-r", "--rate-injected", type=float)
+    parser.add_argument("-o", "--output")
     return parser.parse_args()
+
 
 def main():
     args = parseArgs()
 
     ret = defaultdict(list)
-    with open(args.input ,'r') as f:
-        data = json.load(f)
-    
-    data = sorted(data, key=lambda x: SignalId(**x["signal_info"]))
-    r = renderTemplate("signal_card.tex", {"test": "Hello", "all_signals": data})
+    with open(args.input, "r") as f:
+        data = signal_run_list_adapter.validate_json(f.read())
+
+
+    def filter(item):
+        return item.signal_injected == args.rate_injected
+
+    data = sorted([x for x in data if filter(x)], key=lambda x: x.signal_point)
+
+    r = renderTemplate(
+        "signal_card.tex", {"all_signals": signal_run_list_adapter.dump_python(data)}
+    )
     output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
     with open(args.output, "w") as f:

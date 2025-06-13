@@ -16,6 +16,7 @@ import numpy as np
 import code
 import readline
 import rlcompleter
+
 #
 
 import torch
@@ -185,10 +186,6 @@ def createDatacard(
     with open(out_card, "w") as f:
         f.write(card.dumps())
 
-    metadata = {"signal_metadata": signal_meta}
-
-    # with open(output_dir / "metadata.json", "w") as f:
-    #     f.write(json.dumps(metadata))
 
 
 def main(args):
@@ -246,13 +243,13 @@ def main(args):
 
         _, coupling, mt, mx = signal_name.split("_")
         mt, mx = int(mt), int(mx)
-        signal_metadata = dict(
-            name=signal_name,
-            coupling=coupling,
-            mass_stop=mt,
-            mass_chargino=mx,
-            rate=bkg_data.metadata["signal_injected"],
-        )
+        # signal_metadata = dict(
+        #     name=signal_name,
+        #     coupling=coupling,
+        #     mass_stop=mt,
+        #     mass_chargino=mx,
+        #     rate=bkg_data.metadata.fit_params.injected_signal,
+        # )
         fig, ax = plt.subplots()
         plotRaw(ax, signal_data.E, signal_data.X, pred.variance)
         saveFunc("combine_post_variance", fig)
@@ -262,7 +259,7 @@ def main(args):
             pred,
             signal_data,
             args.output / relative,
-            signal_meta=signal_metadata,
+            # signal_meta=signal_metadata,
             syst_threshold=args.syst_threshold,
         )
 

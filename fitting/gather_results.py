@@ -1,7 +1,8 @@
 import argparse
+from typing import Annotated, Any
 import sys
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, TypeAdapter
 import fitting
 from rich import print
 import json
@@ -15,25 +16,14 @@ import logging
 import json
 import uproot
 from collections import namedtuple
+from fitting.core import Metadata, SignalPoint, SignalRun, signal_run_list_adapter
 
 
-#SignalId = namedtuple("SignalId", "algo coupling mt mx")
-SignalId = namedtuple("SignalId", "coupling mt mx spread")
+# SignalId = namedtuple("SignalId", "algo coupling mt mx")
 
 logger = logging.getLogger(__name__)
 
 
-class InjectionResult(BaseModel):
-    injection: float
-
-    regression_plots: dict[str, str]
-
-
-def idFromMeta(data):
-    return SignalId(
-        #data["algo"],
-        data["coupling"], data["mt"], data["mx"], data["window_spread"]
-    )
 
 
 def loadOneGPR(directory):
@@ -45,7 +35,7 @@ def loadOneGPR(directory):
 
     try:
         with open(metadata_path, "r") as f:
-            metadata = json.load(f)
+            metadata = Metadata.model_validate_json(f.read())
     except OSError as e:
         logger.warn(f"Could not find {metadata_path}")
         return None
@@ -53,15 +43,16 @@ def loadOneGPR(directory):
     with open(chi_path, "r") as f:
         chi2_data = json.load(f)
 
-    with open(post_pred_path, "r") as f:
-        post_pred_data = json.load(f)
+    try:
+        with open(post_pred_path, "r") as f:
+            post_pred_data = json.load(f)
+    except OSError as e:
+        logger.warn(f"Error with file {post_pred_path}")
+        post_pred_data = None
 
-    data = {
-        "signal_id": idFromMeta(metadata),
-        "metadata": metadata,
-        "chi2_info": chi2_data,
-        "post_pred_info": post_pred_data,
-    }
+    data = SignalRun(
+        metadata=metadata, chi2_info=chi2_data, post_pred_info=post_pred_data
+    )
 
     plots = {
         x.stem: str(x)
@@ -75,7 +66,7 @@ def loadOneGPR(directory):
     plots["covar_center"] = next(
         (y for x, y in plots.items() if "covariance_" in x), None
     )
-    data = {**data, "gpr_plots": plots}
+    data.regression_plots = plots
     return data
 
 
@@ -91,7 +82,7 @@ def extractProperty(path, p, tree="limit"):
 
 
 class ExtractGOF(object):
-    name = "GOF"
+    name = "gof"
 
     def __call__(self, directory):
         directory = Path(directory)
@@ -234,22 +225,29 @@ class ExtractLimit(object):
 
 combine_extractors = [
     ExtractGOF(),
-    ExtractFit("fit", "fit"),
+    ExtractFit("extraced_rate", "fit"),
     ExtractFit("fit_asimov", "fitasimov"),
-    ExtractLimit("lim", "limit"),
-    ExtractSig("sig", "sig"),
-    ExtractSigInject("sig_inject", "sig", for_inject="0p0"),
-    ExtractRateInject("fit_inject", "fit", for_inject="0p0"),
+    ExtractLimit("limit", "limit"),
+    ExtractSig("significance", "sig"),
+    ExtractSigInject("significance_for_inject", "sig", for_inject="0p0"),
+    ExtractRateInject("rate_for_inject", "fit", for_inject="0p0"),
 ]
 
 
 def loadOneCombine(directory):
     directory = Path(directory)
     logger.debug(f"Loading combine directory {directory}")
-    with open(directory / "metadata.json", "r") as f:
-        metadata = json.load(f)
+    metadata_path = directory / "metadata.json"
+
+    try:
+        with open(metadata_path, "r") as f:
+            metadata = Metadata.model_validate_json(f.read())
+    except OSError as e:
+        logger.warn(f"Could not find {metadata_path}")
+        return None
+
     all_data = {
-        "signal_id": idFromMeta(metadata),
+        "signal": metadata.signal_point,
         "metadata": metadata,
     }
     data = {}
@@ -265,43 +263,35 @@ def loadOneCombine(directory):
 
 def main(args):
 
-    gathered = {}
+    gathered = defaultdict(list)
     for d in [loadOneGPR(d) for d in args.gpr_dirs]:
-        if not d:
-            continue
-        sid = d["signal_id"]
-        if sid not in gathered:
-            gathered[sid] = {"signal_info": sid._asdict(), "injections": []}
-        this_inject = {
-            "signal_injected": d["metadata"]["signal_injected"],
-            "chi2_info": d["chi2_info"],
-            "post_pred_info": d["post_pred_info"],
-            "gpr_plots": d["gpr_plots"],
-        }
-        gathered[sid]["injections"].append(this_inject)
+        gathered[d.signal_point].append(d)
 
     if args.combine_dirs:
         for c in [loadOneCombine(d) for d in args.combine_dirs]:
             try:
-                item = gathered[c["signal_id"]]
-                i = c["metadata"]["signal_injected"]
+                l = gathered[c["signal"]]
+                i = c["metadata"].fit_params.injected_signal
                 injected = next(
-                    x for x in item["injections"] if x["signal_injected"] == i
+                    x for x in l if x.metadata.fit_params.injected_signal == i
                 )
-                injected.update(c["data"])
+                injected.inference_data.update(c["data"])
             except Exception as e:
                 logger.warn(f"Failed to gather for combine")
-                pass
+                raise
 
-    gathered = list(gathered.values())
+    gathered  = [y for x in gathered.values() for y in x]
+    # gathered  = dict(gathered)
 
+    # to_write = signal_run_list_adapter.dump_json(gathered, indent=2).decode("utf-8")
+    to_write = signal_run_list_adapter.dump_json(gathered, indent=2).decode("utf-8")
     if args.output == "-":
-        json.dump(gathered, sys.stdout, indent=2)
+        sys.stdout.write(to_write)
     else:
         out_path = Path(args.output)
         out_path.parent.mkdir(exist_ok=True, parents=True)
         with open(out_path, "w") as f:
-            json.dump(gathered, f, indent=2)
+            f.write(to_write)
 
 
 def addGatherParser(parser):
