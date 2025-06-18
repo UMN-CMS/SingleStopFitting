@@ -250,7 +250,7 @@ def estimateSingle2DWithWindow(
                 base_dir,
                 min_counts=-1,
                 window=window,
-                use_cuda=True,
+                use_cuda=use_cuda,
                 iterations=iterations,
                 learning_rate=learning_rate,
             )
@@ -519,7 +519,11 @@ def addToParser(parser):
     parser.add_argument("--poisson-rescale", type=float, default=None)
     parser.add_argument("--injected", type=float, nargs="*", default=[0.0])
     parser.add_argument("-i", "--iterations", type=int, default=100)
-    parser.add_argument("--cuda", action="store_true", help="Use cuda", default=False)
+    parser.add_argument(
+        "--cuda",
+        help="Use cuda",
+        action=argparse.BooleanOptionalAction,
+    )
     parser.add_argument(
         "--use-fit-as-signal",
         action="store_true",

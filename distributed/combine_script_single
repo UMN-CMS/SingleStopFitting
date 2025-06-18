@@ -45,7 +45,7 @@ function runNoInject(){
 }
 
 
-is_zero=$(cd $base/$input_dir && cat metadata.json | jq '.signal_injected == 0.0')
+is_zero=$(cat $output/metadata.json | jq '.fit_params.injected_signal == 0.0')
 if [[ $is_zero == true ]]; then
     echo "Running in background only mode"
     runNoInject

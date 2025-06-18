@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-background_dir="backgrounds/background_2025_06_13_rbf"
+background_dir="backgrounds/background_2025_06_18_rbf"
 
 low=500,1700
 med=800,2200
@@ -24,7 +24,6 @@ function makeForCoupling(){
     local coupling=$1
     local dataset=$2
     local low_top=0.9
-    local low_top=0.7
     rebin=2
     printAndRun \
         python3 -m fitting.cli bkg-smooth -n $dataset -o $background_dir/$coupling/low_uncomp -s $coupling \

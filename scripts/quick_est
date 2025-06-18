@@ -24,7 +24,7 @@ case $mode in
         printAndRun python3 -m fitting.cli -l DEBUG estimate -o $dir/$mode/signal_${signal_coup}_${signal_point} \
             -n signal_${signal_coup}_${signal_point} \
             -r Signal${signal_coup} \
-            -b /srv/backgrounds/background_2025_06_13_rbf/Signal${signal_coup}/${area}_${cat}/background_1/background_1.pkl \
+            -b /srv/backgrounds/background_2025_06_13_rbf/Signal${signal_coup}/${area}_${cat}/background_3/background_3.pkl \
             -s /srv/export_hists/signal_${signal_coup}_${signal_point}/Signal${signal_coup}/${realcat}_0p67_m14_vs_mChiRatio.pkl \
             "${@:7}"
         ;;

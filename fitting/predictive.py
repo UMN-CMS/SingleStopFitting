@@ -20,6 +20,7 @@ from .plotting.plots import plotRaw
 from .plotting.annots import addCMS
 from .utils import chi2Bins
 
+
 def summary(samples):
     site_stats = {}
     for k, v in samples.items():
@@ -86,7 +87,7 @@ def makePosteriorPred(
 
     fig, ax = plt.subplots(layout="tight")
     # ax.set_title("Relative Uncertainty In Pred")
-    f = plotRaw(ax, test_data.E, test_data.X, summ["observed"]["std"]**2 )
+    f = plotRaw(ax, test_data.E, test_data.X, summ["observed"]["std"] ** 2)
     ax.set_xlabel("$m_{\\tilde{t}}$ [GeV]")
     ax.set_ylabel("$m_{\\tilde{\chi}} / m_{\\tilde{t}}$")
     addWindow(ax)
@@ -227,7 +228,21 @@ def testStatPerBin(obs, exp, var, power=2):
     return ret
 
 
-def plotPPD(ax, dist, obs, quantiles=(0.05, 0.16, 0.5, 0.84, 0.95)):
+DEFAULT_QUANTILES = (
+    ("yellow", 0.05),
+    ("green", 0.16),
+    ("black", 0.5),
+    ("green", 0.84),
+    ("yellow", 0.95),
+)
+
+
+def plotPPD(
+    ax,
+    dist,
+    obs,
+    quantiles=DEFAULT_QUANTILES,
+):
     import matplotlib.pyplot as plt
     import numpy as np
     from scipy.stats import gaussian_kde
@@ -241,9 +256,9 @@ def plotPPD(ax, dist, obs, quantiles=(0.05, 0.16, 0.5, 0.84, 0.95)):
     ax.axvline(obs, 0, 1, color="red", linestyle="--", alpha=0.5, label="Observed")
     ax.legend(loc="upper right")
     ax.set_xlabel(f"")
-    for q in np.quantile(dist, quantiles):
+    for color, q in np.quantile(dist, quantiles):
         y = density(q)
-        ax.vlines(q, 0, y[0], color="gray", linestyle="--", alpha=0.5)
+        ax.vlines(q, 0, y[0], color=color)
 
     ax.set_ylim(bottom=0)
     ax.set_xlabel(r"$\frac{(x-x_{pred})^2}{\sigma_{pred}^2}$")
@@ -278,7 +293,6 @@ def getPPDStats(test_stat, post_pred, posterior, data, mask=None):
         posterior.mean[mask],
         posterior.variance[mask],
         data.Y[mask],
-
     ).numpy()
 
     quantile_blind = np.count_nonzero(dist < obs_stat) / dist.shape[0]
