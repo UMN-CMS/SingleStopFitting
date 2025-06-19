@@ -105,7 +105,7 @@ def createHists(
                 signal_data.X,
                 var,
                 signal_data.E,
-                f"VAR_{i}",
+                f"CMS_GPRMVN_Eigenvar_Rank_{i}",
                 save_dir=save_dir,
             )
             saveVariation(
@@ -123,8 +123,8 @@ def createHists(
                 save_dir=save_dir,
             )
 
-        root_file[f"bkg_estimate_EVAR_{i}Up"] = h_up
-        root_file[f"bkg_estimate_EVAR_{i}Down"] = h_down
+        root_file[f"bkg_estimate_CMS_GPRMVN_Eigenvar_Rank_{i}Up"] = h_up
+        root_file[f"bkg_estimate_CMS_GPRMVN_Eigenvar_Rank_{i}Down"] = h_down
 
     all_vars = torch.stack(all_vars)
     predictive = pyroi.Predictive(decomposedModel, num_samples=800)
