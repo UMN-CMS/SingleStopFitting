@@ -228,12 +228,17 @@ def testStatPerBin(obs, exp, var, power=2):
     return ret
 
 
-DEFAULT_QUANTILES = (
-    ("yellow", 0.05),
-    ("green", 0.16),
+DEFAULT_QUANTILE_LINES = (
+    # ("yellow", 0.05),
+    # ("green", 0.16),
     ("black", 0.5),
-    ("green", 0.84),
-    ("yellow", 0.95),
+    # ("green", 0.84),
+    # ("yellow", 0.95),
+)
+DEFAULT_QUANTILE_AREAS = (
+    ("yellow", 0.05, 0.16),
+    ("green", 0.16, 0.84),
+    ("yellow", 0.84, 0.95),
 )
 
 
@@ -241,7 +246,8 @@ def plotPPD(
     ax,
     dist,
     obs,
-    quantiles=DEFAULT_QUANTILES,
+    quantile_lines=DEFAULT_QUANTILE_LINES,
+    quantile_areas=DEFAULT_QUANTILE_AREAS,
 ):
     import matplotlib.pyplot as plt
     import numpy as np
@@ -251,14 +257,23 @@ def plotPPD(
     xs = np.linspace(dist.min(), dist.max(), 200)
     density.covariance_factor = lambda: 0.25
     density._compute_covariance()
-    ax.plot(xs, density(xs), label="Posterior Predictive Distribution")
+    ax.plot(xs, density(xs), linewidth=3, label="Posterior Predictive Distribution")
 
-    ax.axvline(obs, 0, 1, color="red", linestyle="--", alpha=0.5, label="Observed")
     ax.legend(loc="upper right")
     ax.set_xlabel(f"")
-    for color, q in np.quantile(dist, quantiles):
+    for color, quantile in quantile_lines:
+        q = np.quantile(dist, quantile)
         y = density(q)
         ax.vlines(q, 0, y[0], color=color)
+
+    for color, left, right in quantile_areas:
+        ql = np.quantile(dist, left)
+        qr = np.quantile(dist, right)
+        points = xs[(xs > ql) & (xs < qr)]
+        y = density(points)
+        ax.fill_between(points, y, color=color, alpha=0.5)
+
+    ax.axvline(obs, 0, 1, color="red", linewidth=3, linestyle="--", label="Observed")
 
     ax.set_ylim(bottom=0)
     ax.set_xlabel(r"$\frac{(x-x_{pred})^2}{\sigma_{pred}^2}$")
