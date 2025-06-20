@@ -22,12 +22,24 @@ class SignalPoint(BaseModel, frozen=True):
     def __lt__(self, other):
         return (self.coupling, self.mt, self.mx) < (other.coupling, other.mt, other.mx)
 
+    def __eq__(self, other):
+        return (self.coupling, self.mt, self.mx) == (other.coupling, other.mt, other.mx)
+
 
 class FitRegion(BaseModel):
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
     stop_bounds: TorchTensor
     ratio_bounds: TorchTensor
 
-    model_config = ConfigDict(arbitrary_types_allowed=True)
+    background_toy: int | None = None
+
+    def __eq__(self, other):
+        return (self.stop_bounds, self.ratio_bounds, self.background_toy) == (
+            other.stop_bounds,
+            other.ratio_bounds,
+            other.background_toy,
+        )
 
 
 class FitParams(BaseModel):
@@ -56,12 +68,10 @@ class SignalRun(BaseModel):
     @property
     def signal_point(self):
         return self.metadata.signal_point
+
     @property
     def signal_injected(self):
         return self.metadata.fit_params.injected_signal
-
-
-
 
 
 signal_run_list_adapter = TypeAdapter(list[SignalRun])
