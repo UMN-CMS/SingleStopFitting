@@ -24,8 +24,6 @@ from fitting.core import Metadata, SignalPoint, SignalRun, signal_run_list_adapt
 logger = logging.getLogger(__name__)
 
 
-
-
 def loadOneGPR(directory):
     logger.debug(f"Loading gpr directory {directory}")
     directory = Path(directory)
@@ -264,23 +262,27 @@ def loadOneCombine(directory):
 def main(args):
 
     gathered = defaultdict(list)
-    for d in [loadOneGPR(d) for d in args.gpr_dirs]:
+    for d in [loadOneGPR(d) for d in Path(".").glob(args.gpr_dirs)]:
         gathered[d.signal_point].append(d)
 
     if args.combine_dirs:
-        for c in [loadOneCombine(d) for d in args.combine_dirs]:
+        for c in [loadOneCombine(d) for d in Path(".").glob(args.combine_dirs)]:
             try:
                 l = gathered[c["signal"]]
                 i = c["metadata"].fit_params.injected_signal
+                t = c["metadata"].fit_region.background_toy
                 injected = next(
-                    x for x in l if x.metadata.fit_params.injected_signal == i
+                    x
+                    for x in l
+                    if x.metadata.fit_params.injected_signal == i
+                    and x.metadata.fit_region.background_toy == t
                 )
                 injected.inference_data.update(c["data"])
             except Exception as e:
                 logger.warn(f"Failed to gather for combine")
                 raise
 
-    gathered  = [y for x in gathered.values() for y in x]
+    gathered = [y for x in gathered.values() for y in x]
     # gathered  = dict(gathered)
 
     # to_write = signal_run_list_adapter.dump_json(gathered, indent=2).decode("utf-8")
@@ -297,8 +299,8 @@ def main(args):
 def addGatherParser(parser):
     import argparse
 
-    parser.add_argument("--combine-dirs", nargs="+")
-    parser.add_argument("--gpr-dirs", required=True, nargs="+")
+    parser.add_argument("--combine-dirs", type=str, default=None)
+    parser.add_argument("--gpr-dirs", required=True, type=str)
     parser.add_argument("-o", "--output", default="-")
     parser.set_defaults(func=main)
 

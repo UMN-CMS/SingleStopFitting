@@ -98,7 +98,7 @@ def main():
     # with open(args.input) as f:
     #     data = json.load(f)
     # plotRate(data, args.output, coupling=args.coupling)
-    with open("gathered/2025_06_18_srmc_gathered.json", "r") as f:
+    with open("gathered/2025_06_19_srmc_small_nn.json", "r") as f:
         data = signal_run_list_adapter.validate_json(f.read())
 
     dropped_points = [(1000, 800)]
