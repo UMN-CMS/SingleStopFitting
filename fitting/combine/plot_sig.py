@@ -112,6 +112,7 @@ def main():
         )
 
     data_4 = sorted([x for x in data if filter(x)], key=lambda x: x.signal_point)
+
     plotSig(data_4, "deletemelater/srmc_312_sig_plot.png")
 
     def filter(item):

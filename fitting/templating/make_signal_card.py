@@ -5,7 +5,7 @@ from pathlib import Path
 import json
 import argparse
 from rich import print
-from fitting.core import signal_run_list_adapter
+from fitting.core import SignalRunCollection
 
 
 # def loadOneMeta(p):
@@ -36,17 +36,11 @@ def main():
 
     ret = defaultdict(list)
     with open(args.input, "r") as f:
-        data = signal_run_list_adapter.validate_json(f.read())
+        data = SignalRunCollection.model_validate_json(f.read())
 
+    data = data.filter(signal_injected=args.rate_injected)
 
-    def filter(item):
-        return item.signal_injected == args.rate_injected
-
-    data = sorted([x for x in data if filter(x)], key=lambda x: x.signal_point)
-
-    r = renderTemplate(
-        "signal_card.tex", {"all_signals": signal_run_list_adapter.dump_python(data)}
-    )
+    r = renderTemplate("signal_card.tex", {"all_signals": data.model_dump()})
     output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
     with open(args.output, "w") as f:

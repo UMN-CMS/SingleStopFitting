@@ -16,7 +16,7 @@ import logging
 import json
 import uproot
 from collections import namedtuple
-from fitting.core import Metadata, SignalPoint, SignalRun, signal_run_list_adapter
+from fitting.core import Metadata, SignalPoint, SignalRun, signal_run_list_adapter, SignalRunCollection
 
 
 # SignalId = namedtuple("SignalId", "algo coupling mt mx")
@@ -286,7 +286,10 @@ def main(args):
     # gathered  = dict(gathered)
 
     # to_write = signal_run_list_adapter.dump_json(gathered, indent=2).decode("utf-8")
-    to_write = signal_run_list_adapter.dump_json(gathered, indent=2).decode("utf-8")
+    # to_write = signal_run_list_adapter.dump_json(gathered, indent=2).decode("utf-8")
+    coll = SignalRunCollection(gathered)
+    to_write = coll.model_dump_json(indent=2)
+    # to_write = SignalRun.dump_json(gathered, indent=2).decode("utf-8")
     if args.output == "-":
         sys.stdout.write(to_write)
     else:
