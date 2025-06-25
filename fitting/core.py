@@ -2,6 +2,7 @@ import torch
 from typing import Annotated, Any, Callable
 from fitting.blinder import GaussianWindow2D
 from fitting.extra_types import TorchTensor
+from collections import defaultdict
 
 from pydantic import (
     BaseModel,
@@ -84,11 +85,15 @@ class SignalRunCollection(RootModel):
     def __getitem__(self, item):
         return self.root[item]
 
+    def append(self, item):
+        return self.root.append(item)
+
     def filter(
         self,
         signal_id: SignalPoint | None = None,
         background_toy: int | None = None,
         signal_injected: float | None = None,
+        spread: float | None = None,
         other_filter: Callable[[SignalRun], bool] | None = None,
         key=lambda x: x.signal_point,
     ):
@@ -100,8 +105,19 @@ class SignalRunCollection(RootModel):
                 ret = ret and item.metadata.fit_region.background_toy == background_toy
             if signal_injected is not None:
                 ret = ret and item.signal_injected == signal_injected
+            if spread is not None:
+                ret = ret and item.window.spread == spread
             if other_filter is not None:
                 ret = ret and other_filter(item)
             return ret
 
         return SignalRunCollection(sorted((x for x in self.root if f(x)), key=key))
+
+    def groupby(
+        self,
+        key=lambda x: x.signal_point,
+    ):
+        ret = defaultdict(lambda: SignalRunCollection([]))
+        for run in self.root:
+            ret[key(run)].append(run)
+        return ret

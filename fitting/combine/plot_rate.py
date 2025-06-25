@@ -1,4 +1,5 @@
 import json
+import argparse
 
 from fitting.plotting.annots import addCMS
 import matplotlib.pyplot as plt
@@ -9,6 +10,7 @@ import mplhep
 import numpy as np
 from scipy.interpolate import griddata
 from collections import namedtuple
+from fitting.core import SignalRunCollection
 
 SignalId = namedtuple("SignalId", "algo coupling mt mx")
 
@@ -94,43 +96,57 @@ def parseAguments():
     return parser.parse_args()
 
 
+def parseArgs():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("input")
+    parser.add_argument("-r", "--rate-injected", type=float)
+    parser.add_argument("-o", "--output")
+    return parser.parse_args()
+
+
 def main():
     # args = parseAguments()
     # with open(args.input) as f:
     #     data = json.load(f)
 
     # plotRate(data, args.output, coupling=args.coupling)
-    with open("gathered/srmc_signalfit_spread2_gathered.json", "r") as f:
-        data = json.load(f)
-    data = {SignalId(**x["signal_info"]): x for x in data}
-    points = [
-        # SignalId("uncomp", "312", 1200, 700),
-        SignalId("uncomp", "312", 1000, 400),
-        SignalId("uncomp", "312", 1200, 400),
-        SignalId("uncomp", "312", 1300, 600),
-        # SignalId("uncomp", "312", 1400, 400),
-        SignalId("uncomp", "312", 1500, 400),
-        SignalId("uncomp", "312", 1500, 600),
-        SignalId("uncomp", "312", 2000, 400),
-        SignalId("uncomp", "312", 2000, 1200),
-        SignalId("comp", "312", 1300, 1200),
-        SignalId("comp", "312", 1500, 1450),
-        # SignalId("comp", "312", 1400, 1300),
-        # SignalId("comp", "312", 2000, 1900),
-    ]
-    # data[SignalId("uncomp", "312", "1200", "400")]
-    plotInjectedRates(data, points, "deletemelater/rates_asimov_312.png", coupling=312)
-    plotRates(data, points, "deletemelater/rates_srmc_312.png", coupling=312)
-    points = [
-        SignalId("uncomp", "313", 1000, 400),
-        # SignalId("uncomp", "313", 1500, 600),
-        SignalId("uncomp", "313", 2000, 600),
-        SignalId("comp", "313", 2000, 1900),
-        SignalId("comp", "313", 1500, 1400),
-        # SignalId("comp", "312", 2000, 1900),
-    ]
-    plotInjectedRates(data, points, "deletemelater/rates_asimov_313.png", coupling=313)
-    plotRates(data, points, "deletemelater/rates_srmc_313.png", coupling=313)
+
+    args = parseArgs()
+    with open(args.input, "r") as f:
+        data = SignalRunCollection.model_validate_json(f.read())
+
+    grouped = data.groupby(
+        lambda x: (x.signal_point, x.signal_injected, x.metadata.window.spread)
+    )
+    print(grouped)
+    # points = [
+    #     # SignalId("uncomp", "312", 1200, 700),
+    #     SignalId("uncomp", "312", 1000, 400),
+    #     SignalId("uncomp", "312", 1200, 400),
+    #     SignalId("uncomp", "312", 1300, 600),
+    #     # SignalId("uncomp", "312", 1400, 400),
+    #     SignalId("uncomp", "312", 1500, 400),
+    #     SignalId("uncomp", "312", 1500, 600),
+    #     SignalId("uncomp", "312", 2000, 400),
+    #     SignalId("uncomp", "312", 2000, 1200),
+    #     SignalId("comp", "312", 1300, 1200),
+    #     SignalId("comp", "312", 1500, 1450),
+    #     # SignalId("comp", "312", 1400, 1300),
+    #     # SignalId("comp", "312", 2000, 1900),
+    # ]
+    # # data[SignalId("uncomp", "312", "1200", "400")]
+    # plotInjectedRates(data, points, "deletemelater/rates_asimov_312.png", coupling=312)
+    # plotRates(data, points, "deletemelater/rates_srmc_312.png", coupling=312)
+    # points = [
+    #     SignalId("uncomp", "313", 1000, 400),
+    #     # SignalId("uncomp", "313", 1500, 600),
+    #     SignalId("uncomp", "313", 2000, 600),
+    #     SignalId("comp", "313", 2000, 1900),
+    #     SignalId("comp", "313", 1500, 1400),
+    #     # SignalId("comp", "312", 2000, 1900),
+    # ]
+    # plotInjectedRates(data, points, "deletemelater/rates_asimov_313.png", coupling=313)
+    # plotRates(data, points, "deletemelater/rates_srmc_313.png", coupling=313)
 
 
 if __name__ == "__main__":

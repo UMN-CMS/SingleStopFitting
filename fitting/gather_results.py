@@ -16,7 +16,7 @@ import logging
 import json
 import uproot
 from collections import namedtuple
-from fitting.core import Metadata, SignalPoint, SignalRun, signal_run_list_adapter, SignalRunCollection
+from fitting.core import Metadata, SignalPoint, SignalRun, SignalRunCollection
 
 
 # SignalId = namedtuple("SignalId", "algo coupling mt mx")
