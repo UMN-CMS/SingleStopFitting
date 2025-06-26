@@ -85,8 +85,14 @@ class SignalRunCollection(RootModel):
     def __getitem__(self, item):
         return self.root[item]
 
+    def __len__(self):
+        return len(self.root)
+
     def append(self, item):
         return self.root.append(item)
+
+    def getProps(self, getter):
+        return [getter(x) for x in self.runs]
 
     def filter(
         self,
@@ -106,7 +112,7 @@ class SignalRunCollection(RootModel):
             if signal_injected is not None:
                 ret = ret and item.signal_injected == signal_injected
             if spread is not None:
-                ret = ret and item.window.spread == spread
+                ret = ret and item.metadata.window.spread == spread
             if other_filter is not None:
                 ret = ret and other_filter(item)
             return ret

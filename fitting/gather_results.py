@@ -108,9 +108,11 @@ class ExtractFit(object):
         if not f.exists():
             return None
         val = extractProperty(f, "r")
+        logger.debug(f"Extracted rate {val} from file {f}")
         if val:
             val = val[0]
         else:
+            logger.warn(f"No rate found in file {f}")
             val = None
         return {"r": val}
 
@@ -195,6 +197,7 @@ class ExtractRateInject(object):
             if val:
                 val = val[0]
             else:
+                logger.warn(f"No rate found")
                 val = None
             ret.append((v, val))
         return ret
@@ -222,13 +225,13 @@ class ExtractLimit(object):
 
 
 combine_extractors = [
-    ExtractGOF(),
-    ExtractFit("extraced_rate", "fit"),
-    ExtractFit("fit_asimov", "fitasimov"),
-    ExtractLimit("limit", "limit"),
-    ExtractSig("significance", "sig"),
-    ExtractSigInject("significance_for_inject", "sig", for_inject="0p0"),
-    ExtractRateInject("rate_for_inject", "fit", for_inject="0p0"),
+    # ExtractGOF(),
+    ExtractFit("extracted_rate", "fit"),
+    # ExtractFit("fit_asimov", "fitasimov"),
+    # ExtractLimit("limit", "limit"),
+    # ExtractSig("significance", "sig"),
+    # ExtractSigInject("significance_for_inject", "sig", for_inject="0p0"),
+    # ExtractRateInject("rate_for_inject", "fit", for_inject="0p0"),
 ]
 
 
@@ -262,25 +265,40 @@ def loadOneCombine(directory):
 def main(args):
 
     gathered = defaultdict(list)
-    for d in [loadOneGPR(d) for d in Path(".").glob(args.gpr_dirs)]:
+    total_gpr = 0
+    for d in (loadOneGPR(d) for d in Path(".").glob(args.gpr_dirs)):
+        total_gpr += 1
         gathered[d.signal_point].append(d)
-
+    total_combine = 0
     if args.combine_dirs:
-        for c in [loadOneCombine(d) for d in Path(".").glob(args.combine_dirs)]:
+        for c in (loadOneCombine(d) for d in Path(".").glob(args.combine_dirs)):
+            total_combine += 1
+
             try:
                 l = gathered[c["signal"]]
                 i = c["metadata"].fit_params.injected_signal
                 t = c["metadata"].fit_region.background_toy
+                s = c["metadata"].window.spread
                 injected = next(
-                    x
-                    for x in l
-                    if x.metadata.fit_params.injected_signal == i
-                    and x.metadata.fit_region.background_toy == t
+                    (
+                        x
+                        for x in l
+                        if x.metadata.fit_params.injected_signal == i
+                        and x.metadata.fit_region.background_toy == t
+                        and x.metadata.window.spread == s
+                    ),
+                    None,
                 )
+                if injected is None:
+                    logger.warn(
+                        f"Could not find associated gpr for combine point {c['metadata'].signal_point}"
+                    )
+
                 injected.inference_data.update(c["data"])
+
             except Exception as e:
                 logger.warn(f"Failed to gather for combine")
-                raise
+                # raise
 
     gathered = [y for x in gathered.values() for y in x]
     # gathered  = dict(gathered)
@@ -289,6 +307,7 @@ def main(args):
     # to_write = signal_run_list_adapter.dump_json(gathered, indent=2).decode("utf-8")
     coll = SignalRunCollection(gathered)
     to_write = coll.model_dump_json(indent=2)
+    logger.info(f"Gathered {total_gpr} GPR dirs and {total_combine} combine dirs")
     # to_write = SignalRun.dump_json(gathered, indent=2).decode("utf-8")
     if args.output == "-":
         sys.stdout.write(to_write)

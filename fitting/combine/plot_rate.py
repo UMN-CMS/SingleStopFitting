@@ -1,5 +1,7 @@
 import json
+from rich import print
 import argparse
+from collections import defaultdict
 
 from fitting.plotting.annots import addCMS
 import matplotlib.pyplot as plt
@@ -10,90 +12,36 @@ import mplhep
 import numpy as np
 from scipy.interpolate import griddata
 from collections import namedtuple
-from fitting.core import SignalRunCollection
+from fitting.core import SignalRunCollection, SignalPoint
 
 SignalId = namedtuple("SignalId", "algo coupling mt mx")
 
 
-def formatSignal(sid):
-    return f"$\lambda''_{{{sid.coupling}}}-{sid.mt},{sid.mx}$ {sid.algo}"
+def formatSignalAndSpread(sid, spread):
+    return f"$\lambda''_{{{sid.coupling}}}-{sid.mt},{sid.mx} (\\sigma={spread})$ "
 
 
-def extractAndMakeRelative(data, signal_id):
-
-    ret = np.array(
-        sorted(
-            [
-                (x["signal_injected"], (x.get("fit") or {"r": None})["r"])
-                for x in data[signal_id]["injections"]
-            ]
-        )
-    )
-    if not np.any(ret[:, 1]):
-        return None
-    ret = ret[ret[:, 1] != np.array(None)]
-    ret[:, 1] = ret[:, 1] - (ret[0, 1] or 0)
-    return ret
-
-
-def plotRates(data, signal_ids, output_path, coupling="312"):
-    data = {
-        signal_id: extractAndMakeRelative(data, signal_id) for signal_id in signal_ids
-    }
+def plotRates(data, output_path, coupling="312"):
     mplhep.style.use("CMS")
 
+    stats = {k: (np.mean(v), np.std(v)) for k, v in data.items()}
+    new = defaultdict(list)
+    for k, v in stats.items():
+        new[(k[0], k[2])].append([k[1], *v])
+    for k in new:
+        new[k].sort(key=lambda x: x[0])
+        new[k] = np.array(new[k])
+
     fig, ax = plt.subplots()
-    for title, points in data.items():
-        if points is None:
-            continue
-        points = points[(points[:, 1]) != np.array(None)]
-        ax.plot(points[:, 0], points[:, 1], "o-", label=formatSignal(title))
+    for k, v in new.items():
+        ax.errorbar(v[:, 0], v[:, 1], yerr=v[:, 2], label=formatSignalAndSpread(*k))
+
     ax.plot([0, 16], [0, 16], "--", color="gray", label="y=x")
     ax.legend()
     ax.set_xlabel(f"Signal Injected (Relative to $\lambda_{{{coupling}}}''=0.1$)")
     ax.set_ylabel("Signal Extracted")
     addCMS(ax)
-
     fig.savefig(output_path)
-
-
-def plotInjectedRates(data, signal_ids, output_path, coupling="312"):
-    data = {
-        signal_id: np.array(
-            sorted(
-                next(
-                    (
-                        x["fit_inject"]
-                        for x in data[signal_id]["injections"]
-                        if x["signal_injected"] == 0.0 and "fit_inject" in x
-                    ),
-                    [],
-                )
-            )
-        )
-        for signal_id in signal_ids
-    }
-    mplhep.style.use("CMS")
-
-    fig, ax = plt.subplots()
-    for title, points in data.items():
-        if len(points):
-            ax.plot(points[:, 0], points[:, 1], label=formatSignal(title))
-    ax.legend()
-    ax.set_xlabel(f"Signal Injected (Relative to $\lambda_{{{coupling}}}''=0.1$)")
-    ax.set_ylabel("Signal Extracted")
-    addCMS(ax)
-
-    fig.savefig(output_path)
-
-
-def parseAguments():
-    parser = argparse.ArgumentParser(description="make plot")
-    parser.add_argument("-o", "--output", required=True, type=str, help="")
-    parser.add_argument("-c", "--coupling", type=str, help="", default="312")
-    parser.add_argument("input")
-
-    return parser.parse_args()
 
 
 def parseArgs():
@@ -104,49 +52,30 @@ def parseArgs():
     return parser.parse_args()
 
 
+def getRate(collection):
+    return np.array(
+        [x.inference_data.get("extracted_rate", {}).get("r") for x in collection]
+    )
+
+
 def main():
-    # args = parseAguments()
-    # with open(args.input) as f:
-    #     data = json.load(f)
-
-    # plotRate(data, args.output, coupling=args.coupling)
-
     args = parseArgs()
     with open(args.input, "r") as f:
-        data = SignalRunCollection.model_validate_json(f.read())
+        base_data = SignalRunCollection.model_validate_json(f.read())
 
-    grouped = data.groupby(
-        lambda x: (x.signal_point, x.signal_injected, x.metadata.window.spread)
-    )
-    print(grouped)
-    # points = [
-    #     # SignalId("uncomp", "312", 1200, 700),
-    #     SignalId("uncomp", "312", 1000, 400),
-    #     SignalId("uncomp", "312", 1200, 400),
-    #     SignalId("uncomp", "312", 1300, 600),
-    #     # SignalId("uncomp", "312", 1400, 400),
-    #     SignalId("uncomp", "312", 1500, 400),
-    #     SignalId("uncomp", "312", 1500, 600),
-    #     SignalId("uncomp", "312", 2000, 400),
-    #     SignalId("uncomp", "312", 2000, 1200),
-    #     SignalId("comp", "312", 1300, 1200),
-    #     SignalId("comp", "312", 1500, 1450),
-    #     # SignalId("comp", "312", 1400, 1300),
-    #     # SignalId("comp", "312", 2000, 1900),
-    # ]
-    # # data[SignalId("uncomp", "312", "1200", "400")]
-    # plotInjectedRates(data, points, "deletemelater/rates_asimov_312.png", coupling=312)
-    # plotRates(data, points, "deletemelater/rates_srmc_312.png", coupling=312)
-    # points = [
-    #     SignalId("uncomp", "313", 1000, 400),
-    #     # SignalId("uncomp", "313", 1500, 600),
-    #     SignalId("uncomp", "313", 2000, 600),
-    #     SignalId("comp", "313", 2000, 1900),
-    #     SignalId("comp", "313", 1500, 1400),
-    #     # SignalId("comp", "312", 2000, 1900),
-    # ]
-    # plotInjectedRates(data, points, "deletemelater/rates_asimov_313.png", coupling=313)
-    # plotRates(data, points, "deletemelater/rates_srmc_313.png", coupling=313)
+    for s in [1.0, 1.5, 1.75, 2.0, 2.5]:
+        data = base_data.filter(
+            signal_id=SignalPoint(coupling="312", mt=1200, mx=600), spread=s
+        )
+        grouped = data.groupby(
+            lambda x: (x.signal_point, x.signal_injected, x.metadata.window.spread)
+        )
+        rates = {k: getRate(v) for k, v in grouped.items()}
+        plotRates(
+            rates,
+            f"deletemelater/rates_srmc_312_1200_600_{str(round(s,2)).replace('.','p')}.png",
+            coupling=312,
+        )
 
 
 if __name__ == "__main__":
