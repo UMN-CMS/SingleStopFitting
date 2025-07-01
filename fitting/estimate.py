@@ -280,6 +280,7 @@ def estimateSingle2D(
     use_fit_as_signal=False,
     static_window_path=None,
     poisson_rescale=None,
+    scale_signal_to_lumi=None,
     **kwargs,
 ):
     base_dir = Path(base_dir)
@@ -328,6 +329,12 @@ def estimateSingle2D(
     signal_hist = signal_file[signal_name, signal_selection]["hist"]
 
     signal_params = signal_file[signal_name, signal_selection]["params"]
+    if scale_signal_to_lumi is not None:
+        current_lumi = signal_params["dataset"]["era"]["lumi"]
+        lumi_scale = scale_signal_to_lumi / current_lumi
+        signal_hist = lumi_scale * signal_hist
+        logger.warn(f"Scaling signal histogram by {lumi_scale}")
+
     extra_metadata = extra_metadata or {}
     extra_metadata["signal_params"] = signal_params
 
@@ -491,6 +498,7 @@ def main(args):
         no_contamination=args.no_contamination,
         poisson_rescale=args.poisson_rescale,
         static_window_path=args.static_window_path,
+        scale_signal_to_lumi=args.scale_signal_to_lumi,
     )
 
 
@@ -523,6 +531,12 @@ def addToParser(parser):
         "--cuda",
         help="Use cuda",
         action=argparse.BooleanOptionalAction,
+    )
+    parser.add_argument(
+        "--scale-signal-to-lumi",
+        help="Scale Signal",
+        type=float,
+        default=None,
     )
     parser.add_argument(
         "--use-fit-as-signal",
