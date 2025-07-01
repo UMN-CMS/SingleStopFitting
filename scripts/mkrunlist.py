@@ -39,6 +39,18 @@ def getCat(s, c):
         return ["uncomp"]
 
 
+LUMI_SCALE_MAP = {
+    "2016_preVFP": 19.65,
+    "2016_postVFP": 16.98,
+    "2017": 41.48,
+    "2018": 59.83,
+    "2022_preEE": 7.98,
+    "2022_postEE": 26.67,
+    "2023_preBPix": 17.65,
+    "2023_postBPix": 9.451,
+}
+
+
 def parseArgs():
     parser = argparse.ArgumentParser(description="Make the list")
     parser.add_argument("inputs", nargs="+")
@@ -46,9 +58,11 @@ def parseArgs():
     parser.add_argument("-b", "--background")
     parser.add_argument("-s", "--signal")
     parser.add_argument("--subpath", type=str, default="{cat}")
+    parser.add_argument("--years", type=str, nargs="+")
     parser.add_argument("--background-toys", type=int, default=None)
     parser.add_argument("-i", "--injections", nargs="+", type=float, required=True)
     parser.add_argument("--spreads", nargs="+", type=float, required=True)
+    parser.add_argument("--outdir", type=str)
 
     return parser.parse_args()
 
@@ -70,10 +84,11 @@ def main():
         cats = getCat(s.stop, s.chargino)
         regions = getRegion(s.stop, s.chargino)
         area = getMassArea(s.stop)
-        for c, r, t, inject, spread in it.product(
-            cats, regions, range(bt), args.injections, args.spreads
+        for c, r, t, inject, spread, year in it.product(
+            cats, regions, range(bt), args.injections, args.spreads, args.years
         ):
             vals = dict(
+                signal_name=next(x for x in path.parts if "signal_" in x),
                 area=area,
                 cat=c,
                 region=r,
@@ -81,6 +96,8 @@ def main():
                 toy=t,
                 spread=spread,
                 inject=inject,
+                year=year,
+                lumi=LUMI_SCALE_MAP[year],
             )
 
             f = getFileNoCase(
@@ -89,12 +106,14 @@ def main():
             )
             cols = [
                 "signal_" + "_".join(map(str, s)),
+                args.outdir.format(**vals).replace(".", "p"),
                 f"Signal{s.coupling}",
-                args.subpath.format(**vals).replace(".","p"),
+                args.subpath.format(**vals).replace(".", "p"),
                 str(f),
             ]
             cols.append(args.background.format(**vals))
             cols += [str(inject), str(spread)]
+            cols.append(str(vals["lumi"]))
             ret.append(" ".join(cols))
     print("\n".join(ret))
 
