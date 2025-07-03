@@ -188,7 +188,7 @@ class ExtractRateInject(object):
             f = directory / f"higgsCombine.{t}.MultiDimFit.mH120.root"
             logger.debug(f"Attempting to load fit from {f}")
             if not f.exists():
-                logger.debug(f"Failed to load fit from {f}")
+                logger.info(f"Failed to load fit from {f}")
                 val = None
             else:
                 val = extractProperty(f, "r")
@@ -213,7 +213,7 @@ class ExtractLimit(object):
         f = directory / f"higgsCombine.{self.tag}.AsymptoticLimits.mH120.root"
         logger.debug(f"Attempting to load fit from {f}")
         if not f.exists():
-            logger.debug(f"Failed to load limit from {f}")
+            logger.info(f"Failed to load limit from {f}")
             return None
         val = extractProperty(f, "limit")
         if val:
@@ -221,6 +221,7 @@ class ExtractLimit(object):
             val = dict(zip(k, val))
         else:
             val = None
+        logger.debug(f"Extracted limit {val} from {f}")
         return val
 
 
@@ -228,8 +229,8 @@ combine_extractors = [
     # ExtractGOF(),
     ExtractFit("extracted_rate", "fit"),
     # ExtractFit("fit_asimov", "fitasimov"),
-    # ExtractLimit("limit", "limit"),
-    # ExtractSig("significance", "sig"),
+    ExtractLimit("limit", "lim"),
+    ExtractSig("significance", "sig"),
     # ExtractSigInject("significance_for_inject", "sig", for_inject="0p0"),
     # ExtractRateInject("rate_for_inject", "fit", for_inject="0p0"),
 ]
@@ -268,17 +269,20 @@ def main(args):
     total_gpr = 0
     for d in (loadOneGPR(d) for d in Path(".").glob(args.gpr_dirs)):
         total_gpr += 1
-        gathered[d.signal_point].append(d)
+        if d is not None:
+            gathered[(d.signal_point, d.metadata.year)].append(d)
     total_combine = 0
     if args.combine_dirs:
         for c in (loadOneCombine(d) for d in Path(".").glob(args.combine_dirs)):
             total_combine += 1
 
             try:
-                l = gathered[c["signal"]]
                 i = c["metadata"].fit_params.injected_signal
                 t = c["metadata"].fit_region.background_toy
                 s = c["metadata"].window.spread
+                y = c["metadata"].year
+
+                l = gathered[(c["signal"], y)]
                 injected = next(
                     (
                         x
@@ -286,6 +290,7 @@ def main(args):
                         if x.metadata.fit_params.injected_signal == i
                         and x.metadata.fit_region.background_toy == t
                         and x.metadata.window.spread == s
+                        and x.metadata.year == y
                     ),
                     None,
                 )
@@ -301,6 +306,7 @@ def main(args):
                 # raise
 
     gathered = [y for x in gathered.values() for y in x]
+    # print(gathered)
     # gathered  = dict(gathered)
 
     # to_write = signal_run_list_adapter.dump_json(gathered, indent=2).decode("utf-8")

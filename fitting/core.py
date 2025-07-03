@@ -59,6 +59,10 @@ class Metadata(BaseModel):
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
+    @property
+    def year(self):
+        return self.other_data["signal_params"]["dataset"]["era"]["name"]
+
 
 class SignalRun(BaseModel):
     metadata: Metadata
@@ -100,6 +104,7 @@ class SignalRunCollection(RootModel):
         background_toy: int | None = None,
         signal_injected: float | None = None,
         spread: float | None = None,
+        year: str | None = None,
         other_filter: Callable[[SignalRun], bool] | None = None,
         key=lambda x: x.signal_point,
     ):
@@ -113,6 +118,8 @@ class SignalRunCollection(RootModel):
                 ret = ret and item.signal_injected == signal_injected
             if spread is not None:
                 ret = ret and item.metadata.window.spread == spread
+            if year is not None:
+                ret = ret and item.metadata.year == year
             if other_filter is not None:
                 ret = ret and other_filter(item)
             return ret
