@@ -14,8 +14,8 @@ stream_output=true
 
 
 
-OUTDIR=results/condor_combine_results_2025_06_19_srmc_small_nn_contamination
-INDIR=results/condor_results_2025_06_19_srmc_small_nn_contamination
+OUTDIR=results/condor_combine_results_2025_07_01_small_nn
+INDIR=results/condor_results_2025_07_01_small_nn
 
 should_transfer_files = YES
 when_to_transfer_output = ON_EXIT
@@ -25,6 +25,5 @@ preserve_relative_paths = true
 
 arguments= $(INDIR) $(SIGPATH) $(OUTDIR) 
 
-#queue SIGPATH from combine_inputs.txt
-queue SIGPATH from combine_contamination_inputs.txt
+queue SIGPATH from condor_inputs/2025_07_02_small_nn_all_years.txt
 

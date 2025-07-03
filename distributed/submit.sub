@@ -5,8 +5,8 @@ executable      = distributed/condor_exec
 
 universe        = vanilla
 request_cpus   = 1
-request_memory = ifthenelse(MemoryUsage =!= undefined, MAX({MemoryUsage * 3/2, 8GB}), 4GB)
-periodic_release = (JobStatus == 5) && (HoldReasonCode == 3) && (NumJobStarts < 3)
+request_memory=ifthenelse(MemoryUsage =!= undefined, MAX({MemoryUsage * 3/2, 8000}), 4000)
+periodic_release=(JobStatus == 5) && (NumJobStarts < 3)
 
 +SingularityImage = "/cvmfs/unpacked.cern.ch/registry.hub.docker.com/cmsml/cmsml:3.11-cuda"
 
