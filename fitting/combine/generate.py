@@ -87,15 +87,12 @@ def createHists(
     all_vars = []
     for i, (va, ve) in enumerate(zip(good_vals, good_vecs)):
         v = torch.sqrt(va)
-        # v = va
-
         var = v * ve
-
         all_vars.append(var)
-        # raw_h_up = torch.clip(mean + var, min=0, max=None)
-        # raw_h_down = torch.clip(mean - var, min=0, max=None)
-        raw_h_up = mean + var
-        raw_h_down = mean - var
+        raw_h_up = torch.clip(mean + var, min=0, max=None)
+        raw_h_down = torch.clip(mean - var, min=0, max=None)
+        # raw_h_up = mean + var
+        # raw_h_down = mean - var
         h_up = tensorToHist(raw_h_up)
         h_down = tensorToHist(raw_h_down)
 
@@ -150,7 +147,7 @@ def createDatacard(
         signal_data,
         root_file,
         syst_threshold,
-        save_n_variations=2,
+        save_n_variations=4,
         save_dir=output_dir / "evars",
     )
 
@@ -177,7 +174,7 @@ def createDatacard(
     card.addObservation(b1, "histograms.root", "data_obs", int(torch.sum(obs.Y)))
 
     for i in range(0, nz):
-        s = Systematic(f"EVAR_{i}", "shape")
+        s = Systematic(f"CMS_GPRMVN_Eigenvar_Rank_{i}", "shape")
         card.addSystematic(s)
         card.setProcessSystematic(bkg, s, b1, 1)
 
