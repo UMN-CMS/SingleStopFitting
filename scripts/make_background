@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-background_dir="backgrounds/background_2025_06_18_rbf"
+base_dir="backgrounds/background_2025_06_26_rbf"
 
 low=500,1700
 med=800,2200
@@ -16,65 +16,80 @@ function printAndRun(){
     $@
 }
 
-extras=""
+extras="--no-cuda"
 
 
 
 function makeForCoupling(){
-    local coupling=$1
-    local dataset=$2
+    local background_dir=$1
+    local coupling=$2
+    local dataset=$3
     local low_top=0.9
     rebin=2
     printAndRun \
         python3 -m fitting.cli bkg-smooth -n $dataset -o $background_dir/$coupling/low_uncomp -s $coupling \
         -i export_hists/$dataset/$coupling/uncomp_0p67_m14_vs_mChiRatio.pkl \
-        -x $low -y 0.0,$low_top --use-cuda --rebin $rebin  $extras ${@:3}
+        -x $low -y 0.0,$low_top  --rebin $rebin  $extras ${@:4}
 
     printAndRun \
         python3 -m fitting.cli bkg-smooth -n $dataset -o $background_dir/$coupling/med_uncomp -s $coupling \
         -i export_hists/$dataset/$coupling/uncomp_0p67_m14_vs_mChiRatio.pkl \
-        -x $med -y 0.0,$low_top --use-cuda --rebin $rebin $extras ${@:3}
+        -x $med -y 0.0,$low_top  --rebin $rebin $extras ${@:4}
 
     printAndRun \
         python3 -m fitting.cli bkg-smooth -n $dataset -o $background_dir/$coupling/high_uncomp -s $coupling \
         -i export_hists/$dataset/$coupling/uncomp_0p67_m14_vs_mChiRatio.pkl \
-        -x $high -y 0.0,$low_top --use-cuda --rebin $rebin $extras ${@:3}
+        -x $high -y 0.0,$low_top  --rebin $rebin $extras ${@:4}
 
     rebin=2
     printAndRun \
         python3 -m fitting.cli bkg-smooth -n $dataset -o $background_dir/$coupling/low_comp -s $coupling \
         -i export_hists/$dataset/$coupling/comp_0p67_m14_vs_mChiRatio.pkl \
-        -x $low -y 0.4,1.0 --use-cuda --rebin $rebin $extras ${@:3}
+        -x $low -y 0.4,1.0  --rebin $rebin $extras ${@:4}
 
     printAndRun \
         python3 -m fitting.cli bkg-smooth -n $dataset -o $background_dir/$coupling/med_comp -s $coupling \
         -i export_hists/$dataset/$coupling/comp_0p67_m14_vs_mChiRatio.pkl \
-        -x $med -y 0.4,1.0 --use-cuda --rebin $rebin $extras ${@:3}
+        -x $med -y 0.4,1.0  --rebin $rebin $extras ${@:4}
 
     printAndRun \
         python3 -m fitting.cli bkg-smooth -n $dataset -o $background_dir/$coupling/high_comp -s $coupling \
         -i export_hists/$dataset/$coupling/comp_0p67_m14_vs_mChiRatio.pkl \
-        -x $high -y 0.4,1.0 --use-cuda --rebin $rebin $extras ${@:3}
+        -x $high -y 0.4,1.0  --rebin $rebin $extras ${@:4}
 
     rebin=1
     printAndRun \
         python3 -m fitting.cli bkg-smooth -n $dataset -o $background_dir/$coupling/low_ucomp -s $coupling \
         -i export_hists/$dataset/$coupling/comp_0p67_m14_vs_mChiRatio.pkl \
-        -x $low -y 0.8,1.0 --use-cuda --rebin $rebin $extras ${@:3}
+        -x $low -y 0.8,1.0  --rebin $rebin $extras ${@:4}
 
     printAndRun \
         python3 -m fitting.cli bkg-smooth -n $dataset -o $background_dir/$coupling/med_ucomp -s $coupling \
         -i export_hists/$dataset/$coupling/comp_0p67_m14_vs_mChiRatio.pkl \
-        -x $med -y 0.8,1.0 --use-cuda --rebin $rebin $extras ${@:3}
+        -x $med -y 0.8,1.0  --rebin $rebin $extras ${@:4}
 
     printAndRun \
         python3 -m fitting.cli bkg-smooth -n $dataset -o $background_dir/$coupling/high_ucomp -s $coupling \
         -i export_hists/$dataset/$coupling/comp_0p67_m14_vs_mChiRatio.pkl \
-        -x $high -y 0.8,1.0 --use-cuda --rebin $rebin $extras ${@:3}
+        -x $high -y 0.8,1.0  --rebin $rebin $extras ${@:4}
 }
 
+# makeForCoupling Signal312 qcd_inclusive_2018
+# makeForCoupling Signal313 qcd_inclusive_2018
+# makeForCoupling Control data_JetHT_2018 --only-clip
 
-makeForCoupling Signal312 qcd_inclusive_2018
-makeForCoupling Signal313 qcd_inclusive_2018
-makeForCoupling Control data_JetHT_2018 --only-clip
 
+function makeForYear(){
+    makeForCoupling $base_dir/$1 Signal312 qcd_inclusive_$1
+    makeForCoupling $base_dir/$1 Signal313 qcd_inclusive_$1
+    # makeForCoupling $base_dir/$1 Control data_JetHT_$1 --only-clip
+}
+
+makeForYear 2016_preVFP
+makeForYear 2016_postVFP
+makeForYear 2017
+makeForYear 2018
+makeForYear 2022_preEE
+makeForYear 2022_postEE
+makeForYear 2023_preBPix
+makeForYear 2023_postBPix
