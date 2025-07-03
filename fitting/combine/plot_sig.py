@@ -9,7 +9,7 @@ import numpy as np
 from rich import print
 from scipy.interpolate import griddata
 
-from fitting.core import signal_run_list_adapter
+from fitting.core import SignalRunCollection
 
 import json
 
@@ -98,12 +98,13 @@ def main():
     # with open(args.input) as f:
     #     data = json.load(f)
     # plotRate(data, args.output, coupling=args.coupling)
-    with open("gathered/2025_06_19_srmc_small_nn.json", "r") as f:
-        data = signal_run_list_adapter.validate_json(f.read())
+    with open("gathered/2025_07_02_small_nn.json", "r") as f:
+        data = SignalRunCollection.model_validate_json(f.read())
 
     dropped_points = [(1000, 800)]
+    year=  "2018"
 
-    def filter(item):
+    def f(item):
         return (
             item.signal_injected == 1
             and item.signal_point.coupling == "312"
@@ -111,22 +112,21 @@ def main():
             and (item.signal_point.mt, item.signal_point.mx) not in dropped_points
         )
 
-    data_4 = sorted([x for x in data if filter(x)], key=lambda x: x.signal_point)
+    data = data.filter(year=year, other_filter=f)
+    print(data)
 
-    plotSig(data_4, "deletemelater/srmc_312_sig_plot.png")
+    plotSig(data, f"deletemelater/{year}/srmc_312_sig_plot.png")
 
-    def filter(item):
-        return (
-            item.signal_injected == 0
-            and item.signal_point.coupling == "312"
-            and item.signal_point.mx > 300
-            and (item.signal_point.mt, item.signal_point.mx) not in dropped_points
-        )
-
-
-    data_0 = sorted([x for x in data if filter(x)], key=lambda x: x.signal_point)
-    print(data_0)
-    plotLim(data_0, "deletemelater/srmc_312_lim_plot.png")
+    # def f(item):
+    #     return (
+    #         item.signal_injected == 0
+    #         and item.signal_point.coupling == "312"
+    #         and item.signal_point.mx > 300
+    #         and (item.signal_point.mt, item.signal_point.mx) not in dropped_points
+    #     )
+    # 
+    # data_0 = data.filter(year=year, other_filter=f)
+    # plotLim(data_0, f"deletemelater/{year}/srmc_312_lim_plot.png")
 
 
 if __name__ == "__main__":
