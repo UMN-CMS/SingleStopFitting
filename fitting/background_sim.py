@@ -21,8 +21,6 @@ logger = logging.getLogger(__name__)
 torch.set_default_dtype(torch.float64)
 
 
-
-
 def makeSimulatedBackground(
     inhist,
     outdir,
@@ -166,9 +164,7 @@ def handleSim(args):
             pkl.dump(h, f)
 
     else:
-        makeSimulatedBackground(
-            h, args.outdir, use_cuda=args.use_cuda, asimov=args.asimov
-        )
+        makeSimulatedBackground(h, args.outdir, use_cuda=args.cuda, asimov=args.asimov)
 
 
 def addSimParser(parser):
@@ -195,7 +191,11 @@ def addSimParser(parser):
     parser.add_argument("-a", "--asimov", default=False, action="store_true")
     parser.add_argument("-n", "--name", required=True, type=str, help="Name")
     parser.add_argument("-i", "--input", required=True, type=str, help="Input")
-    parser.add_argument("-u", "--use-cuda", action="store_true", default=True, help="")
+    parser.add_argument(
+        "--cuda",
+        help="Use cuda",
+        action=argparse.BooleanOptionalAction,
+    )
     parser.add_argument("-r", "--rebin", default=None, type=int, help="Rebinning")
     parser.add_argument(
         "-c", "--only-clip", action="store_true", default=False, help="Only clip"
