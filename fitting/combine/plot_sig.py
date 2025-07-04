@@ -1,5 +1,6 @@
 import json
 
+import matplotlib.patches as patches
 import matplotlib.pyplot as plt
 import argparse
 from pathlib import Path
@@ -44,6 +45,103 @@ def plotSig(data, output_path, coupling="312"):
     ax.set_xlabel(r"$m_{\tilde{t}}$")
     ax.set_ylabel(r"$m_{\tilde{\chi}}$")
     addCMS(ax, loc=1)
+
+    start_points_x = 950
+    start_points_y = 350
+    start_xaxis = 500
+    end_xaxis = 2100
+    start_yaxis = 100
+    end_yaxis = 2000
+
+    ax.set_xlim(start_xaxis, end_xaxis)
+    ax.set_ylim(start_yaxis, end_yaxis)
+
+    rect_dijet = patches.Rectangle(
+        (start_points_x, start_yaxis),
+        (end_xaxis - start_xaxis),
+        (start_points_y - start_yaxis),
+        edgecolor="none",
+        facecolor="gray",
+        alpha=0.3,
+    )
+    ax.add_patch(rect_dijet)
+
+    rect_scout = patches.Polygon(
+        [
+            (start_xaxis, start_yaxis),
+            (start_points_x, start_yaxis),
+            (start_points_x, start_points_x),
+            (start_xaxis, start_xaxis),
+        ],
+        edgecolor="none",
+        facecolor="gray",
+        alpha=0.2,
+    )
+    ax.add_patch(rect_scout)
+
+    ax.text(
+        start_points_x + (end_xaxis - start_points_x) / 2,
+        start_yaxis + (start_points_y - start_yaxis) / 2,
+        "Dijet Regime",
+        horizontalalignment="center",
+        verticalalignment="center",
+    )
+    ax.annotate(
+        "",
+        (
+            start_points_x + 0.8 * (end_xaxis - start_points_x),
+            start_yaxis + 0.15 * (start_points_y - start_yaxis),
+        ),
+        (
+            start_points_x + 0.8 * (end_xaxis - start_points_x),
+            start_yaxis + 0.85 * (start_points_y - start_yaxis),
+        ),
+        arrowprops=dict(arrowstyle="->", lw=2),
+    )
+    ax.annotate(
+        "",
+        (
+            start_points_x + 0.2 * (end_xaxis - start_points_x),
+            start_yaxis + 0.15 * (start_points_y - start_yaxis),
+        ),
+        (
+            start_points_x + 0.2 * (end_xaxis - start_points_x),
+            start_yaxis + 0.85 * (start_points_y - start_yaxis),
+        ),
+        arrowprops=dict(arrowstyle="->", lw=2),
+    )
+
+    ax.text(
+        start_xaxis + (start_points_x - start_xaxis) / 2,
+        start_yaxis + (start_points_x - start_yaxis) / 3,
+        "Scouting\n Regime",
+        horizontalalignment="center",
+        verticalalignment="center",
+    )
+    ax.annotate(
+        "",
+        (
+            start_xaxis + 0.15 * (start_points_x - start_xaxis),
+            start_yaxis + 0.07 * (start_points_x - start_yaxis),
+        ),
+        (
+            start_xaxis + 0.65 * (start_points_x - start_xaxis),
+            start_yaxis + 0.2 * (start_points_x - start_yaxis),
+        ),
+        arrowprops=dict(arrowstyle="->", lw=2),
+    )
+    # ax.annotate(
+    #     "",
+    #     (
+    #         start_points_x + 0.2 * (end_xaxis - start_points_x),
+    #         start_yaxis + 0.15 * (start_points_y - start_yaxis),
+    #     ),
+    #     (
+    #         start_points_x + 0.2 * (end_xaxis - start_points_x),
+    #         start_yaxis + 0.85 * (start_points_y - start_yaxis),
+    #     ),
+    #     arrowprops=dict(arrowstyle="->", lw=2),
+    # )
 
     fig.savefig(output_path)
 
@@ -98,11 +196,11 @@ def main():
     # with open(args.input) as f:
     #     data = json.load(f)
     # plotRate(data, args.output, coupling=args.coupling)
-    with open("gathered/2025_07_02_small_nn.json", "r") as f:
+    with open("gathered/2025_06_19_srmc_small_nn.json", "r") as f:
         data = SignalRunCollection.model_validate_json(f.read())
 
     dropped_points = [(1000, 800)]
-    year=  "2018"
+    year = "2018"
 
     def f(item):
         return (
@@ -113,8 +211,8 @@ def main():
         )
 
     data = data.filter(year=year, other_filter=f)
-    print(data)
 
+    Path(f"deletemelater/{year}/").mkdir(exist_ok=True, parents=True)
     plotSig(data, f"deletemelater/{year}/srmc_312_sig_plot.png")
 
     # def f(item):
@@ -124,7 +222,7 @@ def main():
     #         and item.signal_point.mx > 300
     #         and (item.signal_point.mt, item.signal_point.mx) not in dropped_points
     #     )
-    # 
+    #
     # data_0 = data.filter(year=year, other_filter=f)
     # plotLim(data_0, f"deletemelater/{year}/srmc_312_lim_plot.png")
 
