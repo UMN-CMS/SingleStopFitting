@@ -9,7 +9,7 @@ SignalParts = namedtuple("SignalParts", "coupling stop chargino")
 
 def getSignalParts(path):
     s = next(x for x in path.parts if "signal_" in x)
-    _, coupling, stop, charg = s.split("_")
+    _, _, coupling, stop, charg = s.split("_")
     return SignalParts(coupling, int(stop), int(charg))
 
 
@@ -30,8 +30,10 @@ def getRegion(s, c, cat=None):
 
 def getCat(s, c):
     c = float(c)
+    s = float(s)
     # return ["comp", "uncomp"]
-    if c / s > 0.75:
+
+    if c >= (0.6 * s + 150):
         return ["comp"]
     # elif c / s > 0.6:
     #     return ["comp", "uncomp"]
@@ -105,7 +107,8 @@ def main():
                 args.signal.format(**vals),
             )
             cols = [
-                "signal_" + "_".join(map(str, s)),
+                # "signal_" + "_".join(map(str, s)),
+                vals["signal_name"],
                 args.outdir.format(**vals).replace(".", "p"),
                 f"Signal{s.coupling}",
                 args.subpath.format(**vals).replace(".", "p"),

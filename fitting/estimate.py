@@ -205,7 +205,7 @@ def estimateSingle2DWithWindow(
     windowPlots2D(signal_regression_data, window, saveFunc)
 
     torch.save(sd, sig_dir / "signal_data.pth")
-    _, coupling, stop, chi = signal_name.split("_")
+    _, _, coupling, stop, chi = signal_name.split("_")
 
     fr = FitRegion(
         stop_bounds=torch.aminmax(signal_regression_data.X[:, 0]),
