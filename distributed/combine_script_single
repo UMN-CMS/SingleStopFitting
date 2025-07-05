@@ -32,16 +32,16 @@ common_opts="--rMin=-5 --rMax=20 --cminDefaultMinimizerStrategy 1 --cminFallback
 
 function runSignal(){
     printAndRun text2workspace.py "$output/datacard.txt" -o "$output/datacard.root"
-    printAndRun combineTool.py -M Significance -d "$output/datacard.root"  --there -n .sig  "$common_opts" | tee "$output/sig.log"
-    printAndRun combineTool.py -M MultiDimFit -d  "$output/datacard.root"  --there -n .fit  "$common_opts" | tee "$output/fit.log"
+    printAndRun combineTool.py -M Significance -d "$output/datacard.root"  --there -n .sig  "$common_opts" 2>&1 | tee "$output/sig.log"
+    printAndRun combineTool.py -M MultiDimFit -d  "$output/datacard.root"  --there -n .fit  "$common_opts" 2>&1 | tee "$output/fit.log"
 }
 
 
 function runNoInject(){
     printAndRun text2workspace.py "$output/datacard.txt" -o "$output/datacard.root"
-    printAndRun combineTool.py -M AsymptoticLimits -d "$output/datacard.root"  --there -n .limasimov  -t -1   "$common_opts" | tee "$output/limasimov.log"
-    printAndRun combineTool.py -M AsymptoticLimits -d "$output/datacard.root"  --there -n .lim -t -1          "$common_opts" | tee "$output/lim.log"
-    printAndRun combineTool.py -M MultiDimFit -d      "$output/datacard.root"  --there -n .fit                "$common_opts" | tee "$output/fit.log"
+    printAndRun combineTool.py -M AsymptoticLimits -d "$output/datacard.root"  --there -n .limasimov  -t -1   "$common_opts" 2>&1 | tee "$output/limasimov.log"
+    printAndRun combineTool.py -M AsymptoticLimits -d "$output/datacard.root"  --there -n .lim -t -1          "$common_opts" 2>&1 | tee "$output/lim.log"
+    printAndRun combineTool.py -M MultiDimFit -d      "$output/datacard.root"  --there -n .fit                "$common_opts" 2>&1 | tee "$output/fit.log"
 }
 
 

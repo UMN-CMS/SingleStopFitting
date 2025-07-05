@@ -134,11 +134,7 @@ def regress(
 
     base_save_dir = Path(base_save_dir)
     base_save_dir.mkdir(exist_ok=True, parents=True)
-
-    # model = models.NonStatParametric2D
     model = models.MyNNRBFModel2D
-    # model = models.MyVariational2DModel
-
     trained_model = regression.doCompleteRegression(
         data,
         model,
@@ -324,8 +320,8 @@ def estimateSingle2D(
     bkg_bin_size = np.mean(np.diff(bkg_hist.axes[0].centers))
     logger.info(f"Background bin size is {bkg_bin_size}")
     a1, a2 = bkg_hist.axes
-    a1_min, a1_max = a1.edges.min() + 0.000001, a1.edges.max()
-    a2_min, a2_max = a2.edges.min() + 0.000001, a2.edges.max()
+    a1_min, a1_max = a1.edges.min(), a1.edges.max()
+    a2_min, a2_max = a2.edges.min(), a2.edges.max()
     signal_hist = signal_file[signal_name, signal_selection]["hist"]
 
     signal_params = signal_file[signal_name, signal_selection]["params"]
@@ -343,14 +339,34 @@ def estimateSingle2D(
     ratio = bkg_bin_size / sig_bin_size
     rebin_signal = round(ratio)
     logger.info(f"Rebinning signal by {rebin_signal} based on ratio {ratio:0.2f}")
+    print(a1_min)
+    print(a1_max)
+    print(a2_min)
+    print(a2_max)
+
+    def getClosest(val, axis):
+        edges = axis.edges
+        idx = np.argmin(np.abs(edges - val))
+        return edges[idx]
+
+    sa1 = signal_hist.axes[0]
+    sa2 = signal_hist.axes[1]
+
+    a1_min_target = getClosest(a1_min, sa1)
+    a1_max_target = getClosest(a1_max, sa1)
+    a2_min_target = getClosest(a2_min, sa2)
+    a2_max_target = getClosest(a2_max, sa2)
+
     signal_hist = signal_hist[
-        hist.loc(a1_min) : hist.loc(a1_max), hist.loc(a2_min) : hist.loc(a2_max)
+        hist.loc(a1_min_target) : hist.loc(a1_max_target),
+        hist.loc(a2_min_target) : hist.loc(a2_max_target),
     ]
 
     signal_hist = signal_hist[hist.rebin(rebin_signal), hist.rebin(rebin_signal)]
-
-    logger.info(bkg_hist)
-    logger.info(signal_hist)
+    new_signal_hist=bkg_hist.copy(deep=True)
+    new_signal_hist.view(flow=False).value = signal_hist.values()
+    new_signal_hist.view(flow=False).variance = signal_hist.variances()
+    signal_hist=new_signal_hist
 
     sig_dir = base_dir  # / signal_name
     sig_dir.mkdir(exist_ok=True, parents=True)

@@ -69,6 +69,7 @@ def createHists(
     sig_percent=0.0,
     save_n_variations=None,
     save_dir=None,
+    scale_systs=None,
 ):
     cov_mat = pred.covariance_matrix
     mean = torch.clip(pred.mean, min=0, max=None)
@@ -76,23 +77,32 @@ def createHists(
     root_file["bkg_estimate"] = tensorToHist(mean)
     root_file["signal"] = tensorToHist(signal_data.Y)
     root_file["data_obs"] = tensorToHist(obs.Y)
+
     if sig_percent is not None:
         wanted = vals >= vals[0] * sig_percent
     else:
         wanted = torch.full_like(vals, False, dtype=bool)
-        print(f"Not including systematics")
+        logger.warn(f"Not including systematics")
     nz = int(torch.count_nonzero(wanted))
-    print(f"There are {nz} egeinvariations at least {sig_percent} of the max ")
+
+    logger.info(f"There are {nz} egeinvariations at least {sig_percent} of the max ")
+
     good_vals, good_vecs = vals[wanted], vecs[wanted]
+
+    if scale_systs is not None:
+        good_vals = good_vals * scale_systs**2
+        logger.warn(f"Scaling systematics by {scale_systs}")
+
     all_vars = []
+
     for i, (va, ve) in enumerate(zip(good_vals, good_vecs)):
         v = torch.sqrt(va)
         var = v * ve
         all_vars.append(var)
-        raw_h_up = torch.clip(mean + var, min=0, max=None)
-        raw_h_down = torch.clip(mean - var, min=0, max=None)
-        # raw_h_up = mean + var
-        # raw_h_down = mean - var
+        # raw_h_up = torch.clip(mean + var, min=0, max=None)
+        # raw_h_down = torch.clip(mean - var, min=0, max=None)
+        raw_h_up = mean + var
+        raw_h_down = mean - var
         h_up = tensorToHist(raw_h_up)
         h_down = tensorToHist(raw_h_down)
 
@@ -109,14 +119,14 @@ def createHists(
                 signal_data.X,
                 raw_h_up,
                 signal_data.E,
-                f"EVAR_{i}_UP",
+                f"CMS_GPRMVN_Eigenvar_Rank_{i}_UP",
                 save_dir=save_dir,
             )
             saveVariation(
                 signal_data.X,
                 raw_h_down,
                 signal_data.E,
-                f"EVAR_{i}_DOWN",
+                f"CMS_GPRMVN_Eigenvar_Rank_{i}_DOWN",
                 save_dir=save_dir,
             )
 
@@ -132,9 +142,15 @@ def createHists(
 
 
 def createDatacard(
-    obs, pred, signal_data, output_dir, signal_meta=None, syst_threshold=0.05
+    obs,
+    pred,
+    signal_data,
+    output_dir,
+    signal_meta=None,
+    syst_threshold=0.05,
+    scale_systs=None,
 ):
-    print(f"Generating combine datacard in {output_dir}")
+    logger.info(f"Generating combine datacard in {output_dir}")
     signal_meta = signal_meta or {}
     output_dir = Path(output_dir)
     output_dir.mkdir(exist_ok=True, parents=True)
@@ -149,6 +165,7 @@ def createDatacard(
         syst_threshold,
         save_n_variations=4,
         save_dir=output_dir / "evars",
+        scale_systs=scale_systs,
     )
 
     card = DataCard()
@@ -184,13 +201,11 @@ def createDatacard(
         f.write(card.dumps())
 
 
-
 def main(args):
     for data_path in args.inputs:
         p = Path(data_path)
         parent = p.parent
         signal_name = next(x for x in p.parts if "signal_" in x)
-        print(signal_name)
         relative = parent.relative_to(Path("."))
         if args.base:
             relative = relative.relative_to(Path(args.base))
@@ -258,13 +273,15 @@ def main(args):
             args.output / relative,
             # signal_meta=signal_metadata,
             syst_threshold=args.syst_threshold,
+            scale_systs=args.scale_systs,
         )
 
 
 def addDatacardGenerateParser(parser):
     parser.add_argument("--output")
     parser.add_argument("--base")
-    parser.add_argument("--syst-threshold", default=0.0, type=float)
+    parser.add_argument("--scale-systs", default=None, type=float)
+    parser.add_argument("--syst-threshold", default=0.01, type=float)
     parser.add_argument(
         "--blind-only", default=True, action=argparse.BooleanOptionalAction
     )

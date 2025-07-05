@@ -33,11 +33,14 @@ def makeSimulatedBackground(
 
     inhist = inhist.copy(deep=True)
     v = inhist.view(flow=False).variance
-    inhist.view(flow=False).variance = np.clip(v, a_min=20, a_max=None)
+    min_v = np.min(v[v > 5])
+    inhist.view(flow=False).variance = np.clip(v, a_min=min_v, a_max=None)
+    logger.info(f"Setting min variance to {min_v}")
 
     trained_model = regression.doCompleteRegression(
         inhist,
-        models.MyNNRBFModel2D,
+        models.MyRBFModel,
+        # models.MyNNRBFModel2D,
         MinYCut(min_y=-1),
         None,
         use_cuda=use_cuda,

@@ -265,84 +265,50 @@ class MyNNRBFModel2D(gpytorch.models.ExactGP):
 
         self.mean_module = gpytorch.means.ConstantMean()
 
-        # base_covar_module = SK(gpytorch.kernels.RQKernel(ard_num_dims=2))
-        # base_covar_module = SK(
-        #     gpytorch.kernels.RBFKernel(
-        #         ard_num_dims=2,
-        #         # lengthscale_constraint=gpytorch.constraints.Interval(1e-5, 1e-1),
-        #     )
-        # )
-        # base_covar_module = SK(
+        base_covar_module = SK(NNRBFKernel(idim=2, odim=2, layer_sizes=(12, 8)))
+        # + SK(
         #     gpytorch.kernels.MaternKernel(
         #         ard_num_dims=2,
-        #         # lengthscale_constraint=gpytorch.constraints.Interval(1e-5, 1e-1),
+        #         mu=1.5,
+        #         lengthscale_constraint=gpytorch.constraints.Interval(0.0, 0.2),
         #     )
         # )
-
-        # base_covar_module = SK(NNRBFKernel(idim=2, odim=2, layer_sizes=(20, 10)))
-        # base_covar_module = SK(NNRBFKernel(idim=2, odim=2, layer_sizes=(20, 15, 10)))
-        # base_covar_module = SK(NNRBFKernel(idim=2, odim=2, layer_sizes=(8, 8, 4)))
-        # base_covar_module = SK(NNRBFKernel(idim=2, odim=2, layer_sizes=(12, 8))) + SK(
-        #     gpytorch.kernels.MaternKernel(ard_num_dims=2, mu=1.5)
-        # )
-        # base_covar_module = SK(NNRBFKernel(idim=2, odim=2, layer_sizes=(12, 8))) + SK(
-        #     gpytorch.kernels.RBFKernel(ard_num_dims=2)
-        # )
-        # base_covar_module = SK(NNRBFKernel(idim=2, odim=2, layer_sizes=(12, 8))) + SK(
-        #     NNMaternKernel(idim=2, odim=2, layer_sizes=(12, 8))
-        # )
-        # base_covar_module = SK(
-        #     NNMaternKernel(idim=2, odim=2, layer_sizes=(12, 8))
-        # ) + SK(gpytorch.kernels.RBFKernel(ard_num_dims=2))
-        # base_covar_module = SK(NNMaternKernel(idim=2, odim=2, layer_sizes=(12,8)))
-        # base_covar_module = SK(gpytorch.kernels.MaternKernel(ard_num_dims=2))
-        # base_covar_module = SK(gpytorch.kernels.MaternKernel(ard_num_dims=2))
-        # + SK(
-        #     gpytorch.kernels.MaternKernel(ard_num_dims=2, mu=1.5)
-        # )
-        # base_covar_module = SK(gpytorch.kernels.MaternKernel(ard_num_dims=2, mu=1.5))
-
-        base_covar_module = SK(NNRBFKernel(idim=2, odim=2, layer_sizes=(12, 8)))
-        # base_covar_module = SK(NNRBFKernel(idim=2, odim=2, layer_sizes=(50, 50, 25)))
-        # base_covar_module = SK(NNRBFKernel(idim=2, odim=2, layer_sizes=(25, 10, 5)))
-        # base_covar_module = SK(gpytorch.kernels.RBFKernel(ard_num_dims=2))
-
+        # base_covar_module = SK(NNRBFKernel(idim=2, odim=2, layer_sizes=(12, 8, 4)))
+        # base_covar_module = SK(NNRBFKernel(idim=2, odim=2, layer_sizes=(20, 20, 10)))
+        # base_covar_module = SK(NNRBFKernel(idim=2, odim=2, layer_sizes=(100, 50, 25)))
         self.covar_module = base_covar_module
 
     def forward(self, x):
-        # x = self.feature_extractor(x)
-        # x = self.scale_to_bounds(x)
         covar_x = self.covar_module(x)
         mean_x = self.mean_module(x)
         return gpytorch.distributions.MultivariateNormal(mean_x, covar_x)
 
 
-class MyVariational2DModel(gpytorch.models.ApproximateGP):
-    def __init__(self, train_x, train_y, likelihood, inducing_ratio=1):
-        inducing_points = train_x.clone()[::inducing_ratio]
-        variational_distribution = CholeskyVariationalDistribution(
-            inducing_points.size(0)
-        )
-        variational_strategy = VariationalStrategy(
-            self,
-            inducing_points,
-            variational_distribution,
-            learn_inducing_locations=True,
-        )
-        super().__init__(variational_strategy)
+class MyRBFModel(gpytorch.models.ExactGP):
+    def __init__(
+        self, train_x, train_y, likelihood, inducing_ratio=1, num_inducing=None
+    ):
 
-        self.likelihood = likelihood
+        if num_inducing and inducing_ratio:
+            raise RuntimeError("Cannot have both num inducing and inducing ratio")
 
-        self.mean_module = gpytorch.means.ConstantMean()
+        super().__init__(train_x, train_y, likelihood)
+        if inducing_ratio:
+            self.inducing_ratio = inducing_ratio
+            ind = train_x[:: self.inducing_ratio].clone()
+            self.num_inducing = ind.size(0)
+        else:
+            self.inducing_ratio = None
+            self.num_inducing = num_inducing
+            ind = train_x[:num_inducing].clone()
 
-        self.covar_module = gpytorch.kernels.ScaleKernel(
-            gpytorch.kernels.RBFKernel(ard_num_dims=2)
-            # NNRBFKernel(idim=2, odim=2, layer_sizes=(8, 4))
-        )
+        self.mean_module = gpytorch.means.ZeroMean()
+
+        base_covar_module = SK(gpytorch.kernels.RBFKernel(ard_num_dims=2))
+
+        self.covar_module = base_covar_module
 
     def forward(self, x):
-        # x = self.feature_extractor(x)
-        # x = self.scale_to_bounds(x)
         covar_x = self.covar_module(x)
         mean_x = self.mean_module(x)
         return gpytorch.distributions.MultivariateNormal(mean_x, covar_x)

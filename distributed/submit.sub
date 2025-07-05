@@ -27,5 +27,5 @@ preserve_relative_paths = true
 
 arguments= -o $(OUTDIR) -b $(BACKGROUND_PATH) -s $(SIGNAL_PATH)  -n $(SIGNAL_NAME) -r $(REGION) -i 300 -l 0.04 --injected $(INJECTION) --metadata algo=$(SUB_SIG_PATH) --spread $(SPREAD) --scale-signal-to-lumi $(LUMI)
 
-queue SIGNAL_NAME, OUTDIR, REGION, SUB_SIG_PATH, SIGNAL_PATH, BACKGROUND_PATH, INJECTION, SPREAD, LUMI  from condor_inputs/2025_07_01_all_years.txt
+queue SIGNAL_NAME, OUTDIR, REGION, SUB_SIG_PATH, SIGNAL_PATH, BACKGROUND_PATH, INJECTION, SPREAD, LUMI  from condor_inputs/2025_07_05_all_years_official.txt
 

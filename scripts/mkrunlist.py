@@ -28,17 +28,43 @@ def getRegion(s, c, cat=None):
             return [y]
 
 
+# SPECIAL_CATS = {
+#     (1500.0, 1100.0): ["comp"],
+# }
+
+
+EXCLUDE=[
+    (800.0,400.0),
+    (800.0,600.0),
+    (800.0,700.0),
+    (1000.0,100.0),
+         ]
+
+
+SPECIAL_SPREADS = {
+    (1500.0, 1100.0): [1.5],
+    (2000.0, 1500.0): [1.4],
+}
+
+
 def getCat(s, c):
+    if (s, c) in SPECIAL_CATS:
+        return SPECIAL_CATS[(s, c)]
     c = float(c)
     s = float(s)
-    # return ["comp", "uncomp"]
-
-    if c >= (0.6 * s + 150):
+    if c/s >= 0.76 :
         return ["comp"]
-    # elif c / s > 0.6:
-    #     return ["comp", "uncomp"]
     else:
         return ["uncomp"]
+
+
+def getSpreads(s, c):
+    if (s, c) in SPECIAL_SPREADS:
+        return SPECIAL_SPREADS[(s, c)]
+    if c / s < 0.76:
+        return [1.75]
+    else:
+        return [1.4]
 
 
 LUMI_SCALE_MAP = {
@@ -63,7 +89,9 @@ def parseArgs():
     parser.add_argument("--years", type=str, nargs="+")
     parser.add_argument("--background-toys", type=int, default=None)
     parser.add_argument("-i", "--injections", nargs="+", type=float, required=True)
-    parser.add_argument("--spreads", nargs="+", type=float, required=True)
+    parser.add_argument(
+        "--spreads", nargs="+", type=float, required=False, default=None
+    )
     parser.add_argument("--outdir", type=str)
 
     return parser.parse_args()
@@ -83,11 +111,12 @@ def main():
     ret = []
     bt = args.background_toys or 1
     for s, path in signal_mapping.items():
+        spreads = args.spreads or getSpreads(s.stop, s.chargino)
         cats = getCat(s.stop, s.chargino)
         regions = getRegion(s.stop, s.chargino)
         area = getMassArea(s.stop)
         for c, r, t, inject, spread, year in it.product(
-            cats, regions, range(bt), args.injections, args.spreads, args.years
+            cats, regions, range(bt), args.injections, spreads, args.years
         ):
             vals = dict(
                 signal_name=next(x for x in path.parts if "signal_" in x),

@@ -31,6 +31,30 @@ def formatSignal(sid):
     return f"$\lambda''_{{{sid.coupling}}}({sid.mt},{sid.mx})$ {sid.algo}"
 
 
+start_points_x = 950
+start_points_y = 350
+start_xaxis = 500
+end_xaxis = 2100
+start_yaxis = 100
+end_yaxis = 2000
+
+
+# def interpolate(
+#     vals,
+#     method="nearest",
+#     boundary=(
+#         (start_points_x, start_points_y),
+#         (end_x_axis, start_points_y),
+#         (end_x_axis, end_x_axis),
+#         (start_points_x, start_points_x),
+#     ),
+#     x_step=5,
+#     y_step=5,
+# ):
+#     out = [x for for x in range(boundary[0][0], boundary[2][0])]
+#     d = griddata(vals[:, :2], vals[:, 2], (grid_x, grid_y), method="nearest")
+
+
 def plotSig(data, output_path, coupling="312"):
     data = np.array(
         [
@@ -45,13 +69,6 @@ def plotSig(data, output_path, coupling="312"):
     ax.set_xlabel(r"$m_{\tilde{t}}$")
     ax.set_ylabel(r"$m_{\tilde{\chi}}$")
     addCMS(ax, loc=1)
-
-    start_points_x = 950
-    start_points_y = 350
-    start_xaxis = 500
-    end_xaxis = 2100
-    start_yaxis = 100
-    end_yaxis = 2000
 
     ax.set_xlim(start_xaxis, end_xaxis)
     ax.set_ylim(start_yaxis, end_yaxis)
@@ -143,6 +160,7 @@ def plotSig(data, output_path, coupling="312"):
     #     arrowprops=dict(arrowstyle="->", lw=2),
     # )
 
+    fig.tight_layout()
     fig.savefig(output_path)
 
 
@@ -213,7 +231,7 @@ def main():
     data = data.filter(year=year, other_filter=f)
 
     Path(f"deletemelater/{year}/").mkdir(exist_ok=True, parents=True)
-    plotSig(data, f"deletemelater/{year}/srmc_312_sig_plot.png")
+    plotSig(data, f"deletemelater/{year}/srmc_312_sig_plot.pdf")
 
     # def f(item):
     #     return (

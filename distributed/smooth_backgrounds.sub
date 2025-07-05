@@ -17,7 +17,7 @@ log             = logs/log.$(cluster).$(process)
 stream_error=true
 stream_output=true
 
-OUTDIR=backgrounds/backgrounds_2025_07_04
+OUTDIR=backgrounds/backgrounds_2025_07_05_nnrbf
 environment = "OUTDIR=$(OUTDIR)"
 
 should_transfer_files = YES

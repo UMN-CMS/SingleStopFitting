@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 
-base_dir="backgrounds/background_2025_06_26_rbf"
+base_dir="backgrounds/backgrounds_2025_07_05_test/"
 
-low=500,1700
-med=800,2200
-high=1300,2700
+low=450,1710
+med=795,2205
+high=1290,2700
 
 # low=500,1500
 # med=1000,2000
@@ -16,7 +16,7 @@ function printAndRun(){
     $@
 }
 
-extras="--no-cuda"
+extras="--cuda"
 
 
 
@@ -24,54 +24,71 @@ function makeForCoupling(){
     local background_dir=$1
     local coupling=$2
     local dataset=$3
+    local year=$4
     local low_top=0.9
-    rebin=2
-    printAndRun \
-        python3 -m fitting.cli bkg-smooth -n $dataset -o $background_dir/$coupling/low_uncomp -s $coupling \
-        -i export_hists/$dataset/$coupling/uncomp_0p67_m14_vs_mChiRatio.pkl \
-        -x $low -y 0.0,$low_top  --rebin $rebin  $extras ${@:4}
+    rebin=3
+    # printAndRun \
+    #     python3 -m fitting.cli bkg-smooth -n $dataset -o $background_dir/$coupling/low_uncomp -s $coupling \
+    #     -i export_hists/MC/$year/$coupling/uncomp_0p67_m14_vs_mChiRatio.pkl \
+    #     -x $low -y 0.0,$low_top  --rebin $rebin  $extras ${@:5}
+    # 
+    # printAndRun \
+    #     python3 -m fitting.cli bkg-smooth -n $dataset -o $background_dir/$coupling/med_uncomp -s $coupling \
+    #     -i export_hists/MC/$year/$coupling/uncomp_0p67_m14_vs_mChiRatio.pkl \
+    #     -x $med -y 0.0,$low_top  --rebin $rebin $extras ${@:5}
+    # 
+    # printAndRun \
+    #     python3 -m fitting.cli bkg-smooth -n $dataset -o $background_dir/$coupling/high_uncomp -s $coupling \
+    #     -i export_hists/MC/$year/$coupling/uncomp_0p67_m14_vs_mChiRatio.pkl \
+    #     -x $high -y 0.0,$low_top  --rebin $rebin $extras ${@:5}
 
-    printAndRun \
-        python3 -m fitting.cli bkg-smooth -n $dataset -o $background_dir/$coupling/med_uncomp -s $coupling \
-        -i export_hists/$dataset/$coupling/uncomp_0p67_m14_vs_mChiRatio.pkl \
-        -x $med -y 0.0,$low_top  --rebin $rebin $extras ${@:4}
-
-    printAndRun \
-        python3 -m fitting.cli bkg-smooth -n $dataset -o $background_dir/$coupling/high_uncomp -s $coupling \
-        -i export_hists/$dataset/$coupling/uncomp_0p67_m14_vs_mChiRatio.pkl \
-        -x $high -y 0.0,$low_top  --rebin $rebin $extras ${@:4}
-
-    rebin=2
     printAndRun \
         python3 -m fitting.cli bkg-smooth -n $dataset -o $background_dir/$coupling/low_comp -s $coupling \
-        -i export_hists/$dataset/$coupling/comp_0p67_m14_vs_mChiRatio.pkl \
-        -x $low -y 0.4,1.0  --rebin $rebin $extras ${@:4}
-
+        -i export_hists/MC/$year/$coupling/comp_0p67_m14_vs_mChiRatio.pkl \
+        -x $low -y 0.4,1.0  --rebin $rebin  $extras ${@:5}
+    
     printAndRun \
         python3 -m fitting.cli bkg-smooth -n $dataset -o $background_dir/$coupling/med_comp -s $coupling \
-        -i export_hists/$dataset/$coupling/comp_0p67_m14_vs_mChiRatio.pkl \
-        -x $med -y 0.4,1.0  --rebin $rebin $extras ${@:4}
-
+        -i export_hists/MC/$year/$coupling/comp_0p67_m14_vs_mChiRatio.pkl \
+        -x $med -y 0.4,1.0  --rebin $rebin $extras ${@:5}
+    
     printAndRun \
         python3 -m fitting.cli bkg-smooth -n $dataset -o $background_dir/$coupling/high_comp -s $coupling \
-        -i export_hists/$dataset/$coupling/comp_0p67_m14_vs_mChiRatio.pkl \
-        -x $high -y 0.4,1.0  --rebin $rebin $extras ${@:4}
+        -i export_hists/MC/$year/$coupling/comp_0p67_m14_vs_mChiRatio.pkl \
+        -x $high -y 0.4,1.0  --rebin $rebin $extras ${@:5}
 
-    rebin=1
-    printAndRun \
-        python3 -m fitting.cli bkg-smooth -n $dataset -o $background_dir/$coupling/low_ucomp -s $coupling \
-        -i export_hists/$dataset/$coupling/comp_0p67_m14_vs_mChiRatio.pkl \
-        -x $low -y 0.8,1.0  --rebin $rebin $extras ${@:4}
 
-    printAndRun \
-        python3 -m fitting.cli bkg-smooth -n $dataset -o $background_dir/$coupling/med_ucomp -s $coupling \
-        -i export_hists/$dataset/$coupling/comp_0p67_m14_vs_mChiRatio.pkl \
-        -x $med -y 0.8,1.0  --rebin $rebin $extras ${@:4}
-
-    printAndRun \
-        python3 -m fitting.cli bkg-smooth -n $dataset -o $background_dir/$coupling/high_ucomp -s $coupling \
-        -i export_hists/$dataset/$coupling/comp_0p67_m14_vs_mChiRatio.pkl \
-        -x $high -y 0.8,1.0  --rebin $rebin $extras ${@:4}
+    # rebin=2
+    # printAndRun \
+    #     python3 -m fitting.cli bkg-smooth -n $dataset -o $background_dir/$coupling/low_comp -s $coupling \
+    #     -i export_hists/$dataset/$coupling/comp_0p67_m14_vs_mChiRatio.pkl \
+    #     -x $low -y 0.6,1.0  --rebin $rebin $extras ${@:5}
+    # 
+    # printAndRun \
+    #     python3 -m fitting.cli bkg-smooth -n $dataset -o $background_dir/$coupling/med_comp -s $coupling \
+    #     -i export_hists/$dataset/$coupling/comp_0p67_m14_vs_mChiRatio.pkl \
+    #     -x $med -y 0.6,1.0  --rebin $rebin $extras ${@:4}
+    # 
+    # printAndRun \
+    #     python3 -m fitting.cli bkg-smooth -n $dataset -o $background_dir/$coupling/high_comp -s $coupling \
+    #     -i export_hists/$dataset/$coupling/comp_0p67_m14_vs_mChiRatio.pkl \
+    #     -x $high -y 0.6,1.0  --rebin $rebin $extras ${@:4}
+    
+    # rebin=1
+    # printAndRun \
+    #     python3 -m fitting.cli bkg-smooth -n $dataset -o $background_dir/$coupling/low_ucomp -s $coupling \
+    #     -i export_hists/$dataset/$coupling/comp_0p67_m14_vs_mChiRatio.pkl \
+    #     -x $low -y 0.8,1.0  --rebin $rebin $extras ${@:4}
+    # 
+    # printAndRun \
+    #     python3 -m fitting.cli bkg-smooth -n $dataset -o $background_dir/$coupling/med_ucomp -s $coupling \
+    #     -i export_hists/$dataset/$coupling/comp_0p67_m14_vs_mChiRatio.pkl \
+    #     -x $med -y 0.8,1.0  --rebin $rebin $extras ${@:4}
+    # 
+    # printAndRun \
+    #     python3 -m fitting.cli bkg-smooth -n $dataset -o $background_dir/$coupling/high_ucomp -s $coupling \
+    #     -i export_hists/$dataset/$coupling/comp_0p67_m14_vs_mChiRatio.pkl \
+    #     -x $high -y 0.8,1.0  --rebin $rebin $extras ${@:4}
 }
 
 # makeForCoupling Signal312 qcd_inclusive_2018
@@ -80,16 +97,16 @@ function makeForCoupling(){
 
 
 function makeForYear(){
-    makeForCoupling $base_dir/$1 Signal312 qcd_inclusive_$1
-    makeForCoupling $base_dir/$1 Signal313 qcd_inclusive_$1
+    makeForCoupling $base_dir/MC/$1 Signal312 qcd_inclusive_$1 $1
+    # makeForCoupling $base_dir/$1 Signal313 qcd_inclusive_$1
     # makeForCoupling $base_dir/$1 Control data_JetHT_$1 --only-clip
 }
 
-makeForYear 2016_preVFP
-makeForYear 2016_postVFP
-makeForYear 2017
+# makeForYear 2016_preVFP
+# makeForYear 2016_postVFP
+# makeForYear 2017
 makeForYear 2018
-makeForYear 2022_preEE
-makeForYear 2022_postEE
-makeForYear 2023_preBPix
-makeForYear 2023_postBPix
+# makeForYear 2022_preEE
+# makeForYear 2022_postEE
+# makeForYear 2023_preBPix
+# makeForYear 2023_postBPix
