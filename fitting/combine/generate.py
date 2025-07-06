@@ -253,7 +253,7 @@ def main(args):
             obs = blinded
             signal_data = signal_data.getMasked(mask)
 
-        _, coupling, mt, mx = signal_name.split("_")
+        _, year, coupling, mt, mx = signal_name.split("_")
         mt, mx = int(mt), int(mx)
         # signal_metadata = dict(
         #     name=signal_name,
