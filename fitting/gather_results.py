@@ -38,6 +38,15 @@ def loadOneGPR(directory):
         logger.warn(f"Could not find {metadata_path}")
         return None
 
+    #################
+    ###########################
+    ################################################
+    year = Path(directory).parts[2]
+    metadata.other_data["signal_params"]["dataset"]["era"]["name"] = year
+    ################################################
+    ###########################
+    #################
+
     with open(chi_path, "r") as f:
         chi2_data = json.load(f)
 
@@ -252,6 +261,15 @@ def loadOneCombine(directory):
         "signal": metadata.signal_point,
         "metadata": metadata,
     }
+
+    #################
+    ###########################
+    ################################################
+    year = Path(directory).parts[2]
+    all_data["metadata"].other_data["signal_params"]["dataset"]["era"]["name"] = year
+    ################################################
+    ###########################
+    #################
     data = {}
     for extractor in combine_extractors:
         try:
