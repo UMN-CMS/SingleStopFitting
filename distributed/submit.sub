@@ -5,7 +5,7 @@ executable      = distributed/condor_exec
 
 universe        = vanilla
 request_cpus   = 1
-request_memory=ifthenelse(MemoryUsage =!= undefined, MAX({MemoryUsage * 3/2, 8000}), 4000)
+request_memory=ifthenelse(MemoryUsage =!= undefined, MAX({MemoryUsage * 3/2, 12000}), 4000)
 periodic_release=(JobStatus == 5) && (NumJobStarts < 3)
 
 +SingularityImage = "/cvmfs/unpacked.cern.ch/registry.hub.docker.com/cmsml/cmsml:3.11-cuda"
@@ -25,7 +25,7 @@ transfer_input_files = fitting,temp/env.tar.gz,setup.sh,$(BACKGROUND_PATH),$(SIG
 transfer_output_files = $(OUTDIR)
 preserve_relative_paths = true
 
-arguments= -o $(OUTDIR) -b $(BACKGROUND_PATH) -s $(SIGNAL_PATH)  -n $(SIGNAL_NAME) -r $(REGION) -i 300 -l 0.04 --injected $(INJECTION) --metadata algo=$(SUB_SIG_PATH) --spread $(SPREAD) --scale-signal-to-lumi $(LUMI)
+arguments= -o $(OUTDIR) -b $(BACKGROUND_PATH) -s $(SIGNAL_PATH)  -n $(SIGNAL_NAME) -r $(REGION) -i 300 -l 0.05 --injected $(INJECTION) --metadata algo=$(SUB_SIG_PATH) --spread $(SPREAD) --scale-signal-to-lumi $(LUMI)
 
 queue SIGNAL_NAME, OUTDIR, REGION, SUB_SIG_PATH, SIGNAL_PATH, BACKGROUND_PATH, INJECTION, SPREAD, LUMI  from condor_inputs/2025_07_05_all_years_official.txt
 
