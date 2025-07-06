@@ -28,22 +28,24 @@ def getRegion(s, c, cat=None):
             return [y]
 
 
-# SPECIAL_CATS = {
-#     (1500.0, 1100.0): ["comp"],
-# }
+SPECIAL_CATS = {}
 
 
-EXCLUDE=[
-    (800.0,400.0),
-    (800.0,600.0),
-    (800.0,700.0),
-    (1000.0,100.0),
-         ]
+EXCLUDE = [
+    (800, 400),
+    (800, 600),
+    (800, 700),
+    (900, 700),
+    (1000, 100),
+    (2000, 100),
+    (1500, 100),
+]
 
 
 SPECIAL_SPREADS = {
     (1500.0, 1100.0): [1.5],
     (2000.0, 1500.0): [1.4],
+    (1200.0, 900.0): [1.4],
 }
 
 
@@ -52,7 +54,7 @@ def getCat(s, c):
         return SPECIAL_CATS[(s, c)]
     c = float(c)
     s = float(s)
-    if c/s >= 0.76 :
+    if c / s >= 0.75:
         return ["comp"]
     else:
         return ["uncomp"]
@@ -61,7 +63,7 @@ def getCat(s, c):
 def getSpreads(s, c):
     if (s, c) in SPECIAL_SPREADS:
         return SPECIAL_SPREADS[(s, c)]
-    if c / s < 0.76:
+    if c / s < 0.74:
         return [1.75]
     else:
         return [1.4]
@@ -111,6 +113,8 @@ def main():
     ret = []
     bt = args.background_toys or 1
     for s, path in signal_mapping.items():
+        if (s.stop, s.chargino) in EXCLUDE:
+            continue
         spreads = args.spreads or getSpreads(s.stop, s.chargino)
         cats = getCat(s.stop, s.chargino)
         regions = getRegion(s.stop, s.chargino)
