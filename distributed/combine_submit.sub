@@ -14,8 +14,8 @@ stream_output=true
 
 
 
-OUTDIR=results/condor_combine_results_2025_07_05_small_nn_official
-INDIR=results/condor_results_2025_07_05_small_nn_official
+OUTDIR=results/condor_combine_results_2025_07_06_med_nn_all_years
+INDIR=results/condor_results_2025_07_06_med_nn_all_years
 
 should_transfer_files = YES
 when_to_transfer_output = ON_EXIT
@@ -26,5 +26,5 @@ preserve_relative_paths = true
 
 arguments= $(INDIR) $(SIGPATH) $(OUTDIR) 
 
-queue SIGPATH from condor_inputs/2025_07_05_combine_all_years_official.txt
+queue SIGPATH from condor_inputs/2025_07_06_combine_med_nn_all_years.txt
 
