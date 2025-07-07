@@ -281,7 +281,7 @@ def addDatacardGenerateParser(parser):
     parser.add_argument("--output")
     parser.add_argument("--base")
     parser.add_argument("--scale-systs", default=None, type=float)
-    parser.add_argument("--syst-threshold", default=0.01, type=float)
+    parser.add_argument("--syst-threshold", default=0.00, type=float)
     parser.add_argument(
         "--blind-only", default=True, action=argparse.BooleanOptionalAction
     )
