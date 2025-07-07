@@ -43,6 +43,9 @@ def loadOneGPR(directory):
     ################################################
     year = Path(directory).parts[2]
     metadata.other_data["signal_params"]["dataset"]["era"]["name"] = year
+    metadata.other_data["signal_params"]["dataset"]["era"]["energy"] = (
+        13.0 if year.startswith("201") else 13.6
+    )
     ################################################
     ###########################
     #################
