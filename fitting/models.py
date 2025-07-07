@@ -265,7 +265,8 @@ class MyNNRBFModel2D(gpytorch.models.ExactGP):
 
         self.mean_module = gpytorch.means.ConstantMean()
 
-        base_covar_module = SK(NNRBFKernel(idim=2, odim=2, layer_sizes=(12, 8)))
+        # base_covar_module = SK(NNRBFKernel(idim=2, odim=2, layer_sizes=(12, 8)))
+        base_covar_module = SK(NNRBFKernel(idim=2, odim=2, layer_sizes=(12, 12, 8)))
         # + SK(
         #     gpytorch.kernels.MaternKernel(
         #         ard_num_dims=2,

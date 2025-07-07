@@ -59,7 +59,7 @@ class TrainedModel:
     learned_noise: bool = False
 
 
-def makeLikelihood(data, learn_noise=True, factor=0.1):
+def makeLikelihood(data, learn_noise=True, factor=0.01):
     likelihood = gpytorch.likelihoods.FixedNoiseGaussianLikelihood(
         noise=data.V,
         learn_additional_noise=learn_noise,
