@@ -1,5 +1,6 @@
 import argparse
 import fitting.estimate
+import fitting.combine.plot_sensitivity
 import fitting.diagnostics
 import fitting.background_sim
 from rich import print
@@ -55,6 +56,7 @@ def parseAndProcess():
     addToCli(fitting.background_sim.addSimParser, "bkg-smooth")
     addToCli(fitting.predictive.addPValueParser, "model-checks")
     addToCli(fitting.gather_results.addGatherParser, "gather")
+    addToCli(fitting.combine.plot_sensitivity.addPlotSensitivityParser, "plot-sens")
     addToCli(addDatacardGenerateParser, "make-datacard")
 
     config_parser = subparsers.add_parser("run-config")

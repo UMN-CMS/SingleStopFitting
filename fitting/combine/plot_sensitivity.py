@@ -9,7 +9,7 @@ import matplotlib
 import mplhep
 import numpy as np
 from rich import print
-from scipy.interpolate import griddata
+from scipy.interpolate import griddata, RBFInterpolator
 
 from fitting.core import SignalRunCollection
 
@@ -40,20 +40,44 @@ start_yaxis = 100
 end_yaxis = 2000
 
 
-# def interpolate(
-#     vals,
-#     method="nearest",
-#     boundary=(
-#         (start_points_x, start_points_y),
-#         (end_x_axis, start_points_y),
-#         (end_x_axis, end_x_axis),
-#         (start_points_x, start_points_x),
-#     ),
-#     x_step=5,
-#     y_step=5,
-# ):
-#     out = [x for for x in range(boundary[0][0], boundary[2][0])]
-#     d = griddata(vals[:, :2], vals[:, 2], (grid_x, grid_y), method="nearest")
+def rbfInterpolate(
+    vals,
+    method="nearest",
+    boundary=(
+        (start_points_x, start_points_y),
+        (end_xaxis, start_points_y),
+        (end_xaxis, end_xaxis),
+        (start_points_x, start_points_x),
+    ),
+    x_step=20,
+    y_step=20,
+):
+
+    x = np.arange(boundary[0][0], boundary[2][0], x_step)
+    y = np.arange(boundary[0][1], boundary[1][0], y_step)
+    X, Y = np.meshgrid(x, y)
+    m_X, m_Y = np.meshgrid(np.diff(x) / 2 + x[:-1], np.diff(y) / 2 + y[:-1])
+    shape = m_X.shape
+    interpolation_points = np.stack([m_X, m_Y], axis=2)
+    interpolation_points = interpolation_points.reshape(
+        -1, interpolation_points.shape[-1]
+    )
+    # good = Y < X
+    # interpolation_points = np.array(
+    #     [
+    #         (x, y)
+    #         for x in range(boundary[0][0], boundary[2][0], x_step)
+    #         for y in range(start_points_y, x, y_step)
+    #     ]
+    # )
+    interpolator = RBFInterpolator(
+        vals[:, :2], vals[:, 2], kernel="cubic", smoothing=5.0
+    )
+    interpolated = interpolator(interpolation_points)
+    reshaped = interpolated.reshape(shape)
+    return X, Y, np.ma.masked_where(m_Y > m_X, reshaped)
+
+    # return np.concatenate([interpolation_points, interpolated[:, np.newaxis]], axis=1)
 
 
 def commonElements(ax):
@@ -136,7 +160,14 @@ def commonElements(ax):
     )
 
 
-def plotSig(data, output_path, coupling="312", year="2018"):
+def plotSig(
+    data,
+    output_path,
+    coupling="312",
+    year="2018",
+    drop_if_greater=None,
+    interpolate=False,
+):
     data = np.array(
         [
             [
@@ -145,11 +176,18 @@ def plotSig(data, output_path, coupling="312", year="2018"):
                 x.inference_data.get("significance", np.nan),
             ]
             for x in data
+            if (
+                not drop_if_greater
+                or x.inference_data.get("significance", np.nan) < drop_if_greater
+            )
         ]
     )
-    print(data)
     fig, ax = plt.subplots()
-    c = ax.scatter(data[:, 0], data[:, 1], c=data[:, 2], s=400)
+    if interpolate:
+        X, Y, C = rbfInterpolate(data)
+        c = ax.pcolormesh(X, Y, C)
+    else:
+        c = ax.scatter(data[:, 0], data[:, 1], c=data[:, 2], s=400)
     cb = fig.colorbar(c, ax=ax)
     cb.set_label(r"Significance")
     ax.set_xlabel(r"$m_{\tilde{t}}$")
@@ -195,17 +233,16 @@ def parseAguments():
     return parser.parse_args()
 
 
-def main():
+def main(args):
+    infile = args.input
+    outdir = Path(args.outdir)
     mplhep.style.use("CMS")
-    # args = parseAguments()
-    # with open(args.input) as f:
-    #     data = json.load(f)
-    # plotRate(data, args.output, coupling=args.coupling)
-    with open("gathered/2025_07_05_small_nn_official.json", "r") as f:
+
+    with open(infile, "r") as f:
         base_data = SignalRunCollection.model_validate_json(f.read())
-    dropped_points = [(1000, 800), (1200, 800)]
+
     years = [
-        # "2016_preVFP",
+        "2016_preVFP",
         "2016_postVFP",
         "2017",
         "2018",
@@ -215,42 +252,51 @@ def main():
         "2023_postBPix",
     ]
 
+    dropped_points = [(1000, 800), (1200, 800)]
+
     for coupling, year in it.product(["312", "313"], years):
+        year_outdir = outdir / str(year)
+        year_outdir.mkdir(exist_ok=True, parents=True)
 
-        def f(item):
-            return (
-                item.signal_injected == 1
-                and item.signal_point.coupling == coupling
-                and item.signal_point.mx > 300
-                and item.signal_point.mt > 900
-                and (item.signal_point.mt, item.signal_point.mx) not in dropped_points
-            )
+        def makeFilter(r):
+            def f(item):
+                return (
+                    item.signal_injected == r
+                    and item.signal_point.coupling == coupling
+                    and item.signal_point.mx > 300
+                    and item.signal_point.mt > 900
+                    and (item.signal_point.mt, item.signal_point.mx)
+                    not in dropped_points
+                )
 
-        data = base_data.filter(year=year, other_filter=f)
-        Path(f"deletemelater/{year}/").mkdir(exist_ok=True, parents=True)
+            return f
+
         plotSig(
-            data,
-            f"deletemelater/{year}/srmc_sig_{coupling}_plot.pdf",
+            base_data.filter(year=year, other_filter=makeFilter(1)),
+            year_outdir / f"srmc_sig_r_1p0_{coupling}_plot.pdf",
+            coupling=coupling,
+            year=year,
+            drop_if_greater=10,
+            interpolate=False,
+        )
+        plotSig(
+            base_data.filter(year=year, other_filter=makeFilter(16)),
+            year_outdir / f"srmc_sig_r_16p0_{coupling}_plot.pdf",
             coupling=coupling,
             year=year,
         )
-
-        def f(item):
-            return (
-                item.signal_injected == 0
-                and item.signal_point.coupling == coupling
-                and item.signal_point.mx > 300
-                and item.signal_point.mt > 900
-                and (item.signal_point.mt, item.signal_point.mx) not in dropped_points
-            )
-
-        data_0 = base_data.filter(year=year, other_filter=f)
         plotLim(
-            data_0,
-            f"deletemelater/{year}/srmc_lim_{coupling}_plot.pdf",
+            base_data.filter(year=year, other_filter=makeFilter(0)),
+            year_outdir / f"srmc_lim_{coupling}_plot.pdf",
             coupling=coupling,
             year=year,
         )
+
+
+def addPlotSensitivityParser(parser):
+    parser.add_argument("-o", "--outdir", required=True)
+    parser.add_argument("input")
+    parser.set_defaults(func=main)
 
 
 if __name__ == "__main__":
