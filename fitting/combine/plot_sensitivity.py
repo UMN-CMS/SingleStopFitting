@@ -185,14 +185,30 @@ def plotSig(
     fig, ax = plt.subplots()
     if interpolate:
         X, Y, C = rbfInterpolate(data)
-        c = ax.pcolormesh(X, Y, C)
+        c = ax.pcolormesh(
+            X,
+            Y,
+            C,
+            # cmap="managua",
+            # cmin=0,
+            # cmax=10,
+        )
     else:
-        c = ax.scatter(data[:, 0], data[:, 1], c=data[:, 2], s=400)
+        c = ax.scatter(
+            data[:, 0],
+            data[:, 1],
+            c=data[:, 2],
+            s=400,
+            # cmap="managua",
+            # vmin=0,
+            # vmax=10,
+        )
+
     cb = fig.colorbar(c, ax=ax)
     cb.set_label(r"Significance")
     ax.set_xlabel(r"$m_{\tilde{t}}$")
     ax.set_ylabel(r"$m_{\tilde{\chi}}$")
-    addCMS(ax, year=year, loc=1)
+    addCMS(ax, year=year, loc=1, coupling=coupling)
     commonElements(ax)
     fig.tight_layout()
     fig.savefig(output_path)
@@ -205,7 +221,7 @@ def plotLim(data, output_path, coupling="312", year="2018"):
             [
                 x.signal_point.mt,
                 x.signal_point.mx,
-                x.inference_data.get("limit", {"50": np.nan})["50"],
+                0.1 * x.inference_data.get("limit", {"50": np.nan})["50"] ** 2,
             ]
             for x in data
         ]
@@ -213,7 +229,7 @@ def plotLim(data, output_path, coupling="312", year="2018"):
     fig, ax = plt.subplots()
     c = ax.scatter(data[:, 0], data[:, 1], c=data[:, 2], s=400)
     cb = fig.colorbar(c, ax=ax)
-    cb.set_label(r"Expected Limit")
+    cb.set_label(f"95% CLs Upper Limit on $\lambda_{{{coupling}}}''$")
     ax.set_xlabel(r"$m_{\tilde{t}}$")
     ax.set_ylabel(r"$m_{\tilde{\chi}}$")
     addCMS(ax, loc=1, year=year)
