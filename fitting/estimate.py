@@ -6,6 +6,7 @@ import copy
 from typing import Any
 import json
 import logging
+import numpy as np
 import gpytorch
 import pickle as pkl
 from pathlib import Path
@@ -135,6 +136,7 @@ def regress(
     base_save_dir = Path(base_save_dir)
     base_save_dir.mkdir(exist_ok=True, parents=True)
     model = models.MyNNRBFModel2D
+    # model = models.MyRBFModel
     trained_model = regression.doCompleteRegression(
         data,
         model,
@@ -149,7 +151,7 @@ def regress(
         window,
         iterations=iterations,
         use_cuda=use_cuda,
-        learn_noise=True,
+        learn_noise=False,
         lr=learning_rate,
         validate_function=validate,
     )
@@ -286,7 +288,11 @@ def estimateSingle2D(
         signal_file = pkl.load(f)
     with open(background_path, "rb") as f:
         background = pkl.load(f)
-    bkg_hist = background
+
+    if background_name is not None:
+        bkg_hist = background[background_name, signal_selection]["hist"]
+    else:
+        bkg_hist = background
 
     logger.info(bkg_hist)
 
@@ -298,7 +304,6 @@ def estimateSingle2D(
     logger.info(bkg_hist)
     logger.info(f"Post scale background is ")
     if poisson_rescale:
-        import numpy as np
 
         logger.info(f"Rescaling by {poisson_rescale} and preserving poisson statistics")
 
@@ -310,7 +315,6 @@ def estimateSingle2D(
         print(bkg_hist)
 
     if min_base_variance:
-        import numpy as np
 
         bkg_hist = bkg_hist.copy(deep=True)
         v = bkg_hist.view(flow=False).variance
@@ -495,7 +499,7 @@ def main(args):
         signal_path=args.signal,
         signal_name=args.name,
         signal_selection=args.region,
-        background_name=None,
+        background_name=args.bkg_name,
         base_dir=args.outdir,
         use_cuda=args.cuda,
         window_spread=args.spread,
@@ -507,7 +511,7 @@ def main(args):
         scale_background=args.scale_background,
         signal_injections=args.injected,
         use_fit_as_signal=args.use_fit_as_signal,
-        min_base_variance=5,
+        min_base_variance=3,
         use_other_model=other_model,
         inject_other_signals=args.inject_other_signals,
         extra_metadata=extra_metadata,
@@ -535,7 +539,7 @@ def addToParser(parser):
     parser.add_argument(
         "-n", "--name", type=str, help="Name for the signal", required=True
     )
-    parser.add_argument("--scale-background", type=float, default=1.0)
+    parser.add_argument("--scale-background", type=float, default=None)
     parser.add_argument("--rebin-signal", default=1, type=int, help="Rebinning")
     parser.add_argument("--rebin-background", default=1, type=int, help="Rebinning")
     parser.add_argument("-r", "--region", type=str, help="Region", required=True)
@@ -568,6 +572,7 @@ def addToParser(parser):
     )
     parser.add_argument("--static-window-path", type=str, default=None)
     parser.add_argument("--spread", type=float, default=1.5)
+    parser.add_argument("--bkg-name", type=str, default=None)
     parser.add_argument("--inject-other-signals", default=None, type=str, nargs="*")
     parser.add_argument("--metadata", default=None, type=str, nargs="*")
     parser.add_argument("--use-other-model", type=str)

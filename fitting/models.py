@@ -247,7 +247,7 @@ class NonStatParametric2D(gpytorch.models.ExactGP):
 
 class MyNNRBFModel2D(gpytorch.models.ExactGP):
     def __init__(
-        self, train_x, train_y, likelihood, inducing_ratio=1, num_inducing=None
+        self, train_x, train_y, likelihood, inducing_ratio=3, num_inducing=None
     ):
 
         if num_inducing and inducing_ratio:
@@ -265,8 +265,26 @@ class MyNNRBFModel2D(gpytorch.models.ExactGP):
 
         self.mean_module = gpytorch.means.ConstantMean()
 
-        # base_covar_module = SK(NNRBFKernel(idim=2, odim=2, layer_sizes=(12, 8)))
         base_covar_module = SK(NNRBFKernel(idim=2, odim=2, layer_sizes=(12, 12, 8)))
+        # + SK(
+        #     gpytorch.kernels.MaternKernel(
+        #         mu=2.5,
+        #         ard_num_dims=2,
+        #         lengthscale_constraint=gpytorch.constraints.Interval(0.5, 20.0),
+        #     )
+        # )
+        # + SK(NNRBFKernel(idim=2, odim=2, layer_sizes=(12, 8, 4)))
+        # + SK(
+        #     gpytorch.kernels.MaternKernel(
+        #         ard_num_dims=2,
+        #         mu=2.5,
+        #         # lengthscale_constraint=gpytorch.constraints.Interval(0.0, 0.2),
+        #     )
+        # )
+        # base_covar_module = SK(NNRBFKernel(idim=2, odim=2, layer_sizes=(12, 8)))
+        # base_covar_module = SK(NNRBFKernel(idim=2, odim=2, layer_sizes=(12, 12, 8)))
+        # base_covar_module = SK(NNRBFKernel(idim=2, odim=2, layer_sizes=(50, 50, 25)))
+        # base_covar_module = SK(NNRBFKernel(idim=2, odim=2, layer_sizes=(100, 100, 50)))
         # + SK(
         #     gpytorch.kernels.MaternKernel(
         #         ard_num_dims=2,
@@ -277,7 +295,10 @@ class MyNNRBFModel2D(gpytorch.models.ExactGP):
         # base_covar_module = SK(NNRBFKernel(idim=2, odim=2, layer_sizes=(12, 8, 4)))
         # base_covar_module = SK(NNRBFKernel(idim=2, odim=2, layer_sizes=(20, 20, 10)))
         # base_covar_module = SK(NNRBFKernel(idim=2, odim=2, layer_sizes=(100, 50, 25)))
-        self.covar_module = base_covar_module
+        self.covar_module = gpytorch.kernels.InducingPointKernel(
+            base_covar_module, likelihood=likelihood, inducing_points=ind
+        )
+        # self.covar_module = base_covar_module
 
     def forward(self, x):
         covar_x = self.covar_module(x)

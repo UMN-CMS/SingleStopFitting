@@ -17,7 +17,7 @@ from matplotlib.patches import Polygon
 
 from .plotting.plot_tools import getPolyFromSquares, makeSquares
 from .plotting.plots import plotRaw
-from .plotting.annots import addCMS
+from .plotting.annots import addCMS, addStandardAxisLabels2D
 from .utils import chi2Bins
 
 
@@ -85,17 +85,16 @@ def makePosteriorPred(
             fontsize=20,
         )
 
-    fig, ax = plt.subplots(layout="tight")
+    fig, ax = plt.subplots(layout="constrained")
     # ax.set_title("Relative Uncertainty In Pred")
     f = plotRaw(ax, test_data.E, test_data.X, summ["observed"]["std"] ** 2)
-    ax.set_xlabel("$m_{\\tilde{t}}$ [GeV]")
-    ax.set_ylabel("$m_{\\tilde{\chi}} / m_{\\tilde{t}}$")
+    addStandardAxisLabels2D(ax)
     addWindow(ax)
     addChi2(ax)
     addCMS(ax)
     save_func("post_variance", fig)
 
-    fig, ax = plt.subplots(layout="tight")
+    fig, ax = plt.subplots(layout="constrained")
     # ax.set_title("Relative Uncertainty In Pred")
     f = plotRaw(
         ax,
@@ -103,14 +102,13 @@ def makePosteriorPred(
         test_data.X,
         torch.sqrt((bkg_mvn.variance)) / bkg_mvn.mean,
     )
-    ax.set_xlabel("$m_{\\tilde{t}}$ [GeV]")
-    ax.set_ylabel("$m_{\\tilde{\chi}} / m_{\\tilde{t}}$")
+    addStandardAxisLabels2D(ax)
     addWindow(ax)
     addChi2(ax)
     addCMS(ax)
     save_func("post_relative_uncertainty", fig)
 
-    fig, ax = plt.subplots(layout="tight")
+    fig, ax = plt.subplots(layout="constrained")
     # ax.set_title("Relative Uncertainty In Posterior")
     f = plotRaw(
         ax,
@@ -118,13 +116,12 @@ def makePosteriorPred(
         test_data.X,
         summ["observed"]["std"] / bkg_mvn.mean,
     )
-    ax.set_xlabel("$m_{\\tilde{t}}$ [GeV]")
-    ax.set_ylabel("$m_{\\tilde{\chi}} / m_{\\tilde{t}}$")
+    addStandardAxisLabels2D(ax)
     addWindow(ax)
     addCMS(ax)
     save_func("post_posterior_relative_uncertainty", fig)
 
-    fig, ax = plt.subplots(layout="tight")
+    fig, ax = plt.subplots(layout="constrained")
     f = plotRaw(
         ax, test_data.E, test_data.X, pred_only_pulls, cmap="coolwarm", cmin=-3, cmax=3
     )
@@ -134,7 +131,7 @@ def makePosteriorPred(
     addCMS(ax)
     save_func("post_pull_latent", fig)
 
-    fig, ax = plt.subplots(layout="tight")
+    fig, ax = plt.subplots(layout="constrained")
     f = plotRaw(
         ax, test_data.E, test_data.X, stat_pulls, cmap="coolwarm", cmin=-3, cmax=3
     )
@@ -142,11 +139,10 @@ def makePosteriorPred(
     addWindow(ax)
     addChi2(ax)
     addCMS(ax)
-    ax.set_xlabel("$m_{\\tilde{t}}$ [GeV]")
-    ax.set_ylabel("$m_{\\tilde{\chi}} / m_{\\tilde{t}}$")
+    addStandardAxisLabels2D(ax)
     save_func("post_pull_statistical", fig)
 
-    fig, ax = plt.subplots(layout="tight")
+    fig, ax = plt.subplots(layout="constrained")
     f = plotRaw(
         ax, test_data.E, test_data.X, post_pulls, cmap="coolwarm", cmin=-3, cmax=3
     )
@@ -155,7 +151,7 @@ def makePosteriorPred(
     addCMS(ax)
     save_func("post_pull_posterior", fig)
 
-    fig, ax = plt.subplots(layout="tight")
+    fig, ax = plt.subplots(layout="constrained")
     f = plotRaw(
         ax,
         test_data.E,
@@ -165,11 +161,10 @@ def makePosteriorPred(
     )
     # ax.set_title("Pull Stat - Pull Posterior")
     addCMS(ax)
-    ax.set_xlabel("$m_{\\tilde{t}}$ [GeV]")
-    ax.set_ylabel("$m_{\\tilde{\chi}} / m_{\\tilde{t}}$")
+    addStandardAxisLabels2D(ax)
     save_func("post_pull_diff", fig)
 
-    fig, ax = plt.subplots(layout="tight")
+    fig, ax = plt.subplots(layout="constrained")
     p = post_pulls
     ax.hist(p, bins=np.linspace(-5.0, 5.0, 21), density=True)
     # ax.set_title("Predictive Pull Distribution -- Full Plane")
@@ -184,7 +179,7 @@ def makePosteriorPred(
     addCMS(ax)
     save_func("post_global_pred_pulls_hist", fig)
 
-    fig, ax = plt.subplots(layout="tight")
+    fig, ax = plt.subplots(layout="constrained")
     h1 = np.histogram(p.numpy(), bins=10, range=(-5, 5), density=True)
     mplhep.histplot(h1, ax=ax, label="Global Pulls")
     if mask is not None:
