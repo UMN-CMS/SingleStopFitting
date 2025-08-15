@@ -247,7 +247,7 @@ class NonStatParametric2D(gpytorch.models.ExactGP):
 
 class MyNNRBFModel2D(gpytorch.models.ExactGP):
     def __init__(
-        self, train_x, train_y, likelihood, inducing_ratio=3, num_inducing=None
+        self, train_x, train_y, likelihood, inducing_ratio=2, num_inducing=None
     ):
 
         if num_inducing and inducing_ratio:
