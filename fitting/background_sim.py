@@ -1,5 +1,6 @@
 import pickle as pkl
 from .regression import DataValues
+import lz4.frame
 import gpytorch
 import mplhep
 from fitting.estimate import validate
@@ -33,7 +34,7 @@ def makeSimulatedBackground(
 
     inhist = inhist.copy(deep=True)
     v = inhist.view(flow=False).variance
-    min_v = np.min(v[v > 5])
+    min_v = np.min(v[v > 1.8])
     inhist.view(flow=False).variance = np.clip(v, a_min=min_v, a_max=None)
     logger.info(f"Setting min variance to {min_v}")
 
@@ -119,7 +120,7 @@ def makeSimulatedBackground(
         ratio = new_hist.sum().value / init_sum
         new_hist *= 1 / ratio
 
-        with open(o / f"background_{i}.pkl", "wb") as f:
+        with lz4.frame.open(o / f"background_{i}.pklz4", "wb") as f:
             pkl.dump(new_hist, f)
         fig, ax = plt.subplots()
         new_hist.plot(ax=ax)
@@ -138,7 +139,7 @@ def makeSimulatedBackground(
 def loadHistogram(path, name, selection, x_bounds=None, y_bounds=None):
     import hist
 
-    with open(path, "rb") as f:
+    with lz4.frame.open(path, "rb") as f:
         background = pkl.load(f)
 
     def L(l):
@@ -147,9 +148,11 @@ def loadHistogram(path, name, selection, x_bounds=None, y_bounds=None):
         return None
 
     ret = background[name, selection]["hist"][
+        ...,
         L(x_bounds[0]) : L(x_bounds[1]),
         L(y_bounds[0]) : L(y_bounds[1]),
     ]
+    ret = ret["central", ...]
 
     return ret
 
@@ -163,7 +166,7 @@ def handleSim(args):
     if args.only_clip:
         outdir = Path(args.outdir)
         outdir.mkdir(exist_ok=True, parents=True)
-        with open(outdir / f"background.pkl", "wb") as f:
+        with lz4.frame.open(outdir / f"background.pklz4", "wb") as f:
             pkl.dump(h, f)
 
     else:

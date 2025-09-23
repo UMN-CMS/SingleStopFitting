@@ -1,5 +1,6 @@
 import argparse
 from .core import FitParams, SignalPoint, FitRegion, Metadata
+import lz4.frame
 from fitting.config import Config
 from pydantic import BaseModel, BeforeValidator, ConfigDict, PlainSerializer, ConfigDict
 import copy
@@ -131,6 +132,7 @@ def regress(
     use_cuda=False,
     window_spread=1.0,
     learning_rate=0.02,
+    min_base_variance=None,
 ):
 
     base_save_dir = Path(base_save_dir)
@@ -151,9 +153,10 @@ def regress(
         window,
         iterations=iterations,
         use_cuda=use_cuda,
-        learn_noise=False,
+        learn_noise=True,
         lr=learning_rate,
         validate_function=validate,
+        min_base_variance=min_base_variance,
     )
     return trained_model
 
@@ -174,12 +177,15 @@ def estimateSingle2DWithWindow(
     use_other_kernel=None,
     extra_metadata=None,
     no_contamination=False,
+    min_base_variance=None,
 ):
     extra_metadata = extra_metadata or {}
     signal_injections = signal_injections or [0.0, 1.0, 4.0, 16.0]
     sig_dir = base_dir  # / signal_name
     sig_dir.mkdir(exist_ok=True, parents=True)
     signal_regression_data = DataValues.fromHistogram(signal_hist)
+
+    other_data = extra_metadata["signal_params"]["dataset"]["other_data"]
 
     def saveFunc(name, fig):
         ext = Config.IMAGE_TYPE
@@ -198,12 +204,15 @@ def estimateSingle2DWithWindow(
         signal_data=signal_regression_data,
         signal_hist=signal_hist,
         signal_name=signal_name,
+        signal_meta=extra_metadata["signal_params"],
     )
 
     windowPlots2D(signal_regression_data, window, saveFunc)
 
     torch.save(sd, sig_dir / "signal_data.pth")
-    _, _, coupling, stop, chi = signal_name.split("_")
+    coupling = other_data["coupling"]
+    stop = other_data["stop_mass"]
+    chi = other_data["chargino_mass"]
 
     fr = FitRegion(
         stop_bounds=torch.aminmax(signal_regression_data.X[:, 0]),
@@ -251,6 +260,7 @@ def estimateSingle2DWithWindow(
                 use_cuda=use_cuda,
                 iterations=iterations,
                 learning_rate=learning_rate,
+                min_base_variance=min_base_variance,
             )
         trained_model.metadata = metadata
         with open(save_dir / "metadata.json", "w") as f:
@@ -267,7 +277,7 @@ def estimateSingle2D(
     signal_selection,
     background_name,
     base_dir,
-    window_spread=1.0,
+    window_spread=1.75,
     blinding_signal=True,
     inject_other_signals=None,
     rebin_background=1,
@@ -279,20 +289,31 @@ def estimateSingle2D(
     static_window_path=None,
     poisson_rescale=None,
     scale_signal_to_lumi=None,
+    background_selection=None,
+    x_range=None,
+    y_range=None,
     **kwargs,
 ):
     base_dir = Path(base_dir)
     extra_metadata = extra_metadata or {}
 
-    with open(signal_path, "rb") as f:
+    background_selection = background_selection or signal_selection
+
+    with lz4.frame.open(signal_path, "rb") as f:
         signal_file = pkl.load(f)
-    with open(background_path, "rb") as f:
+    with lz4.frame.open(background_path, "rb") as f:
         background = pkl.load(f)
 
     if background_name is not None:
-        bkg_hist = background[background_name, signal_selection]["hist"]
+        bkg_hist = background[background_name, background_selection]["hist"]
     else:
         bkg_hist = background
+    bkg_hist = bkg_hist["central", ...]
+
+    if x_range:
+        bkg_hist = bkg_hist[hist.loc(x_range[0]) : hist.loc(x_range[1]), :]
+    if y_range:
+        bkg_hist = bkg_hist[:, hist.loc(y_range[0]) : hist.loc(y_range[1])]
 
     logger.info(bkg_hist)
 
@@ -314,12 +335,6 @@ def estimateSingle2D(
         bkg_hist[...] = np.stack([new, new], axis=-1)
         print(bkg_hist)
 
-    if min_base_variance:
-
-        bkg_hist = bkg_hist.copy(deep=True)
-        v = bkg_hist.view(flow=False).variance
-        bkg_hist.view(flow=False).variance = np.clip(v, a_min=5, a_max=None)
-
     bkg_hist = bkg_hist[hist.rebin(rebin_background), hist.rebin(rebin_background)]
     bkg_bin_size = np.mean(np.diff(bkg_hist.axes[0].centers))
     logger.info(f"Background bin size is {bkg_bin_size}")
@@ -327,6 +342,7 @@ def estimateSingle2D(
     a1_min, a1_max = a1.edges.min(), a1.edges.max()
     a2_min, a2_max = a2.edges.min(), a2.edges.max()
     signal_hist = signal_file[signal_name, signal_selection]["hist"]
+    signal_hist = signal_hist["central", ...]
 
     signal_params = signal_file[signal_name, signal_selection]["params"]
     if scale_signal_to_lumi is not None:
@@ -367,10 +383,10 @@ def estimateSingle2D(
     ]
 
     signal_hist = signal_hist[hist.rebin(rebin_signal), hist.rebin(rebin_signal)]
-    new_signal_hist=bkg_hist.copy(deep=True)
+    new_signal_hist = bkg_hist.copy(deep=True)
     new_signal_hist.view(flow=False).value = signal_hist.values()
     new_signal_hist.view(flow=False).variance = signal_hist.variances()
-    signal_hist=new_signal_hist
+    signal_hist = new_signal_hist
 
     sig_dir = base_dir  # / signal_name
     sig_dir.mkdir(exist_ok=True, parents=True)
@@ -424,12 +440,13 @@ def estimateSingle2D(
             base_dir,
             rebin_signal=rebin_signal,
             extra_metadata=extra_metadata,
+            min_base_variance=min_base_variance,
             **kwargs,
         )
     else:
         for other_signal in inject_other_signals:
             path, name = other_signal.split(":")
-            with open(path, "rb") as f:
+            with lz4.frame.open(path, "rb") as f:
                 signal_file = pkl.load(f)
 
             signal_hist = signal_file[name, signal_selection]["hist"]
@@ -499,6 +516,7 @@ def main(args):
         signal_path=args.signal,
         signal_name=args.name,
         signal_selection=args.region,
+        background_selection=args.region_background,
         background_name=args.bkg_name,
         base_dir=args.outdir,
         use_cuda=args.cuda,
@@ -511,7 +529,7 @@ def main(args):
         scale_background=args.scale_background,
         signal_injections=args.injected,
         use_fit_as_signal=args.use_fit_as_signal,
-        min_base_variance=3,
+        min_base_variance=1.8**2,
         use_other_model=other_model,
         inject_other_signals=args.inject_other_signals,
         extra_metadata=extra_metadata,
@@ -519,6 +537,8 @@ def main(args):
         poisson_rescale=args.poisson_rescale,
         static_window_path=args.static_window_path,
         scale_signal_to_lumi=args.scale_signal_to_lumi,
+        y_range=args.y_range,
+        x_range=args.x_range,
     )
 
 
@@ -539,10 +559,13 @@ def addToParser(parser):
     parser.add_argument(
         "-n", "--name", type=str, help="Name for the signal", required=True
     )
+    parser.add_argument("--y-range", type=float, nargs=2, default=None)
+    parser.add_argument("--x-range", type=float, nargs=2, default=None)
     parser.add_argument("--scale-background", type=float, default=None)
     parser.add_argument("--rebin-signal", default=1, type=int, help="Rebinning")
     parser.add_argument("--rebin-background", default=1, type=int, help="Rebinning")
     parser.add_argument("-r", "--region", type=str, help="Region", required=True)
+    parser.add_argument("--region-background", type=str, help="Region", default=None)
     parser.add_argument("-l", "--learning-rate", type=float, default=0.02)
     parser.add_argument("--poisson-rescale", type=float, default=None)
     parser.add_argument("--injected", type=float, nargs="*", default=[0.0])
