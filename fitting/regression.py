@@ -22,6 +22,7 @@ import gpytorch
 import hist
 import torch
 
+
 from . import transformations
 from .utils import dataToHist, computePosterior, chi2Bins
 
@@ -59,13 +60,12 @@ class TrainedModel:
     learned_noise: bool = False
 
 
-def makeLikelihood(data, learn_noise=True, factor=0.001):
+def makeLikelihood(data, learn_noise=True, factor=0.1):
     likelihood = gpytorch.likelihoods.FixedNoiseGaussianLikelihood(
         noise=data.V,
         learn_additional_noise=learn_noise,
-        noise_constraint=gpytorch.constraints.Interval(
-            data.V.min() * factor, torch.max(data.V) * factor
-        ),
+        #noise_constraint=gpytorch.constraints.Interval(torch.min(data.V)*factor, torch.max(data.V) * factor),
+        noise_constraint=gpytorch.constraints.Interval(torch.min(data.V), torch.max(data.V) * factor),
     )
     return likelihood
 
@@ -375,10 +375,11 @@ def updateModelNewData(
 
 
 def doCompleteRegression(
-    histogram,
+    histogram_orig,
     model_class,
     domain_blinder,
     window_blinder,
+    min_base_variance=None,
     use_cuda=True,
     iterations=300,
     lr=0.001,
@@ -386,11 +387,12 @@ def doCompleteRegression(
     validate_function=None,
 ):
 
-    all_data = DataValues.fromHistogram(histogram)
+    all_data = DataValues.fromHistogram(histogram_orig)
+    if min_base_variance:
+        print(f"SETTING MINIMUM VARIANCE DURING REGRESSION TO {min_base_variance}")
+        all_data.V = torch.clamp(all_data.V, min=min_base_variance, max=None)
+        print(all_data.V)
     domain_mask = domain_blinder(all_data.X, all_data.Y)
-
-    logger.info(f"Setting min gaussian likelihood to 3")
-    all_data.V = torch.clamp(all_data.V, min=3)
 
     test_data = all_data[domain_mask]
     if window_blinder is not None:
@@ -475,7 +477,7 @@ def doCompleteRegression(
     trained_model = TrainedModel(
         model_class=model_class,
         model_state=model.state_dict(),
-        input_data=histogram,
+        input_data=histogram_orig,
         domain_mask=domain_mask,
         blind_mask=window_mask,
         transform=train_transform,
