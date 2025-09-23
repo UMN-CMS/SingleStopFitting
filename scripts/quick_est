@@ -31,10 +31,10 @@ case $mode in
         ;;
     CR)
         printAndRun python3 -m fitting.cli -l DEBUG estimate -o $dir/$mode/signal_${signal_coup}_${signal_point} \
-            -n signal_${signal_coup}_${signal_point} \
+            -n signal_2018_${signal_coup}_${signal_point} \
             -r Signal${signal_coup} \
-            -b backgrounds/background_2025_06_26_rbf/$year/Control/${area}_${cat}/background.pkl \
-            -s export_hists/signal_${signal_coup}_${signal_point}/Signal${signal_coup}/${cat}_0p67_m14_vs_mChiRatio.pkl \
+            -b backgrounds/background_2025_06_12/Control/${area}_${cat}/background.pkl \
+            -s export_hists/signal_2018_${signal_coup}_${signal_point}/Signal${signal_coup}/${cat}_0p67_m14_vs_mChiRatio.pkl \
             "${@:8}"
         ;;
 esac
