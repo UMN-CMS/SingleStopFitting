@@ -9,7 +9,7 @@ SignalParts = namedtuple("SignalParts", "coupling stop chargino")
 
 def getSignalParts(path):
     s = next(x for x in path.parts if "signal_" in x)
-    _, _, coupling, stop, charg = s.split("_")
+    *_, coupling, stop, charg, _ = s.split("_")
     return SignalParts(coupling, int(stop), int(charg))
 
 
@@ -22,7 +22,7 @@ def getMassArea(m):
 
 def getRegion(s, c, cat=None):
     ratio = c / s
-    mapping = reversed([(0, "uncomp"), (0.7, "comp"), (0.89, "ucomp")])
+    mapping = reversed([(0, "uncomp"), (0.7, "comp")])  # , (0.89, "ucomp")])
     for x, y in mapping:
         if ratio > x:
             return [y]
@@ -36,37 +36,28 @@ EXCLUDE = [
     (800, 600),
     (800, 700),
     (900, 700),
-    (1000, 100),
-    (2000, 100),
-    (1500, 100),
 ]
 
 
-SPECIAL_SPREADS = {
-    (1500.0, 1100.0): [1.5],
-    (2000.0, 1500.0): [1.4],
-    (1200.0, 900.0): [1.4],
-}
-
-
 def getCat(s, c):
-    if (s, c) in SPECIAL_CATS:
-        return SPECIAL_CATS[(s, c)]
+    # if (s, c) in SPECIAL_CATS:
+    #     return SPECIAL_CATS[(s, c)]
     c = float(c)
     s = float(s)
-    if c / s >= 0.75:
+    if (c - 150) / s >= 0.6:
         return ["comp"]
     else:
         return ["uncomp"]
 
 
 def getSpreads(s, c):
-    if (s, c) in SPECIAL_SPREADS:
-        return SPECIAL_SPREADS[(s, c)]
-    if c / s < 0.74:
-        return [1.75]
-    else:
-        return [1.4]
+    return [1.75]
+    # if (s, c) in SPECIAL_SPREADS:
+    #     return SPECIAL_SPREADS[(s, c)]
+    # if c / s < 0.74:
+    #     return [1.75]
+    # else:
+    #     return [1.4]
 
 
 LUMI_SCALE_MAP = {
@@ -100,7 +91,7 @@ def parseArgs():
 
 
 def getFileNoCase(path, pattern):
-    for x in path.rglob("*.pkl"):
+    for x in path.rglob("*.pklz4"):
         if x.name.lower() == pattern.lower():
             return x
     return None
@@ -132,7 +123,6 @@ def main():
                 spread=spread,
                 inject=inject,
                 year=year,
-                lumi=LUMI_SCALE_MAP[year],
             )
 
             f = getFileNoCase(
@@ -149,7 +139,7 @@ def main():
             ]
             cols.append(args.background.format(**vals))
             cols += [str(inject), str(spread)]
-            cols.append(str(vals["lumi"]))
+            # cols.append(str(vals["lumi"]))
             ret.append(" ".join(cols))
     print("\n".join(ret))
 
