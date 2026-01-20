@@ -54,7 +54,7 @@ class Metadata(BaseModel):
     signal_point: SignalPoint
     fit_region: FitRegion
     fit_params: FitParams
-    window: GaussianWindow2D
+    window: GaussianWindow2D | None
     other_data: dict[str, Any]
 
     model_config = ConfigDict(arbitrary_types_allowed=True)

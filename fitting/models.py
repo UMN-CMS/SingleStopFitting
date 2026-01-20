@@ -265,12 +265,17 @@ class MyNNRBFModel2D(gpytorch.models.ExactGP):
 
         self.mean_module = gpytorch.means.ConstantMean()
 
-        base_covar_module = SK(NNRBFKernel(idim=2, odim=2, layer_sizes=(12, 12, 8)))
-        # + SK(
+        # base_covar_module = SK(NNRBFKernel(idim=2, odim=2, layer_sizes=(12, 12, 8)))
+        # base_covar_module = SK(NNRBFKernel(idim=2, odim=2, layer_sizes=(12, 12, 8)))
+        # base_covar_module = SK(NNRBFKernel(idim=2, odim=2, layer_sizes=(12, 8)))
+        base_covar_module = SK(NNRBFKernel(idim=2, odim=2, layer_sizes=(20,4)))
+        # base_covar_module = SK(NNRBFKernel(idim=2, odim=2, layer_sizes=(100, 50, 8)))
+        # base_covar_module = SK(NNRBFKernel(idim=2, odim=2, layer_sizes=(3,2)))
+        # base_covar_module = SK(NNRBFKernel(idim=2, odim=2, layer_sizes=(12,8))) + SK(
         #     gpytorch.kernels.MaternKernel(
-        #         mu=2.5,
+        #         mu=0.5,
         #         ard_num_dims=2,
-        #         lengthscale_constraint=gpytorch.constraints.Interval(0.5, 20.0),
+        #         lengthscale_constraint=gpytorch.constraints.Interval(0.001, 0.01),
         #     )
         # )
         # + SK(NNRBFKernel(idim=2, odim=2, layer_sizes=(12, 8, 4)))
@@ -295,10 +300,10 @@ class MyNNRBFModel2D(gpytorch.models.ExactGP):
         # base_covar_module = SK(NNRBFKernel(idim=2, odim=2, layer_sizes=(12, 8, 4)))
         # base_covar_module = SK(NNRBFKernel(idim=2, odim=2, layer_sizes=(20, 20, 10)))
         # base_covar_module = SK(NNRBFKernel(idim=2, odim=2, layer_sizes=(100, 50, 25)))
-        self.covar_module = gpytorch.kernels.InducingPointKernel(
-            base_covar_module, likelihood=likelihood, inducing_points=ind
-        )
-        # self.covar_module = base_covar_module
+        # self.covar_module = gpytorch.kernels.InducingPointKernel(
+        #     base_covar_module, likelihood=likelihood, inducing_points=ind
+        # )
+        self.covar_module = base_covar_module
 
     def forward(self, x):
         covar_x = self.covar_module(x)
@@ -326,7 +331,14 @@ class MyRBFModel(gpytorch.models.ExactGP):
 
         self.mean_module = gpytorch.means.ZeroMean()
 
-        base_covar_module = SK(gpytorch.kernels.RBFKernel(ard_num_dims=2))
+        # base_covar_module = SK(gpytorch.kernels.RBFKernel(ard_num_dims=2)) + SK(
+        #     gpytorch.kernels.MaternKernel(
+        #         ard_num_dims=2,
+        #         mu=0.5,
+        #         lengthscale_constraint=gpytorch.constraints.Interval(0.0, 0.2),
+        #     )
+        # )
+        base_covar_module = SK(gpytorch.kernels.RBFKernel(ard_num_dims=2)) 
 
         self.covar_module = base_covar_module
 

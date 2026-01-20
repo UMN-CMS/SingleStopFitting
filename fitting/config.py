@@ -1,2 +1,2 @@
 class Config:
-    IMAGE_TYPE="pdf"
+    IMAGE_TYPE="png"

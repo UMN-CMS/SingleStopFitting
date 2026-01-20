@@ -18,7 +18,7 @@ from matplotlib.patches import Polygon
 from .plotting.plot_tools import getPolyFromSquares, makeSquares
 from .plotting.plots import plotRaw
 from .plotting.annots import addCMS, addStandardAxisLabels2D
-from .utils import chi2Bins
+from .utils import chi2Bins, diffExp
 
 
 def summary(samples):
@@ -206,6 +206,7 @@ def chiTestStat(post_pred, obs, **kwargs):
 
 def chi2PredTest(mean, variance, obs, **kwargs):
     # return post_pred.mean(dim=-1)
+    # return diffExp(mean, obs, min_var=0)
     return chi2Bins(mean, obs, variance, min_var=0)
 
 
@@ -273,35 +274,24 @@ def plotPPD(
     ax.set_ylim(bottom=0)
     ax.set_xlabel(r"$\frac{(x-x_{pred})^2}{\sigma_{pred}^2}$")
     mplhep.sort_legend(ax=ax)
-    addCMS(ax)
+    addCMS(ax, text_color="black")
 
 
 def getPPDStats(test_stat, post_pred, posterior, data, mask=None):
     obs_blind = data.Y[mask]
+    # V = torch.sqrt(posterior.variance[mask] ** 2 + data.V[mask] ** 2)
+    # V = posterior.variance[mask]
+    V = data.V[mask]
     dist = test_stat(
         posterior.mean[mask],
-        posterior.variance[mask],
+        V,
         post_pred[:, mask],
     ).numpy()
     obs_stat = test_stat(
         posterior.mean[mask],
-        posterior.variance[mask],
-        data.Y[mask],
-    ).numpy()
-    quantile_blind = np.count_nonzero(dist < obs_stat) / dist.shape[0]
-    return dist, obs_stat, quantile_blind
-
-
-def getPPDStats(test_stat, post_pred, posterior, data, mask=None):
-    obs_blind = data.Y[mask]
-    dist = test_stat(
-        posterior.mean[mask],
-        posterior.variance[mask],
-        post_pred[:, mask],
-    ).numpy()
-    obs_stat = test_stat(
-        posterior.mean[mask],
-        posterior.variance[mask],
+        # posterior.variance[mask],
+        V,
+        # data.V[mask],
         data.Y[mask],
     ).numpy()
 
@@ -338,9 +328,10 @@ def makePValuePlots(pred, all_data, train_mask, save_func, test_stat=chi2PredTes
     print(f"Observed blind data val: {obs_stat_blind:0.4f}")
     print(f"Blind quantile: {quantile_blind:0.4f}")
 
-    fig, ax = plt.subplots()
-    plotPPD(ax, dist_blind, obs_stat_blind)
-    save_func("post_pred_density_blind", fig)
+    if torch.any(train_mask):
+        fig, ax = plt.subplots()
+        plotPPD(ax, dist_blind, obs_stat_blind)
+        save_func("post_pred_density_blind", fig)
 
     data = {
         "chibins": {
@@ -356,7 +347,7 @@ def makePValuePlots(pred, all_data, train_mask, save_func, test_stat=chi2PredTes
             "quantile": float(quantile_blind),
         },
     }
-    addCMS(ax)
+    addCMS(ax, text_color="black")
     save_func("post_pred_data", data)
     fig, ax = plt.subplots()
     perbin = testStatPerBin(post_pred[:, m], pred.mean[m], pred.variance[m]).numpy()
@@ -371,7 +362,7 @@ def makePValuePlots(pred, all_data, train_mask, save_func, test_stat=chi2PredTes
         torch.from_numpy(perbin_quantile),
         cmap="coolwarm",
     )
-    addCMS(ax)
+    addCMS(ax, text_color="black")
     save_func("perbin_quantile", fig)
 
 

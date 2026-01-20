@@ -66,6 +66,7 @@ def createHists(
     pred,
     signal_data,
     root_file,
+    year,
     sig_percent=0.0,
     save_n_variations=None,
     save_dir=None,
@@ -112,26 +113,26 @@ def createHists(
                 signal_data.X,
                 var,
                 signal_data.E,
-                f"CMS_GPRMVN_Eigenvar_Rank_{i}",
+                f"CMS_GPRMVN_Eigenvar_Rank_{year}_{i}",
                 save_dir=save_dir,
             )
             saveVariation(
                 signal_data.X,
                 raw_h_up,
                 signal_data.E,
-                f"CMS_GPRMVN_Eigenvar_Rank_{i}_UP",
+                f"CMS_GPRMVN_Eigenvar_Rank_{year}_{i}_UP",
                 save_dir=save_dir,
             )
             saveVariation(
                 signal_data.X,
                 raw_h_down,
                 signal_data.E,
-                f"CMS_GPRMVN_Eigenvar_Rank_{i}_DOWN",
+                f"CMS_GPRMVN_Eigenvar_Rank_{year}_{i}_DOWN",
                 save_dir=save_dir,
             )
 
-        root_file[f"bkg_estimate_CMS_GPRMVN_Eigenvar_Rank_{i}Up"] = h_up
-        root_file[f"bkg_estimate_CMS_GPRMVN_Eigenvar_Rank_{i}Down"] = h_down
+        root_file[f"bkg_estimate_GPRMVN_{year}_Rank_{i}Up"] = h_up
+        root_file[f"bkg_estimate_GPRMVN_{year}_Rank_{i}Down"] = h_down
 
     all_vars = torch.stack(all_vars)
     predictive = pyroi.Predictive(decomposedModel, num_samples=800)
@@ -146,6 +147,7 @@ def createDatacard(
     pred,
     signal_data,
     output_dir,
+    year,
     signal_meta=None,
     syst_threshold=0.05,
     scale_systs=None,
@@ -162,6 +164,7 @@ def createDatacard(
         pred,
         signal_data,
         root_file,
+        year,
         syst_threshold,
         save_n_variations=4,
         save_dir=output_dir / "evars",
@@ -191,7 +194,7 @@ def createDatacard(
     card.addObservation(b1, "histograms.root", "data_obs", int(torch.sum(obs.Y)))
 
     for i in range(0, nz):
-        s = Systematic(f"CMS_GPRMVN_Eigenvar_Rank_{i}", "shape")
+        s = Systematic(f"CMS_GPRMVN_{year}_Rank_{i}", "shape")
         card.addSystematic(s)
         card.setProcessSystematic(bkg, s, b1, 1)
 

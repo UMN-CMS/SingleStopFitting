@@ -12,7 +12,7 @@ LUMI_SCALE_MAP = {
 }
 
 
-def addCMS(ax, text="", loc=1, year="2018", coupling="312", text_color="white"):
+def addCMS(ax, text="", loc=1, year="2023_preBPix", coupling="312", text_color="white"):
     if text is not None:
         text = "\n" + text
 
@@ -23,7 +23,8 @@ def addCMS(ax, text="", loc=1, year="2018", coupling="312", text_color="white"):
     mplhep.cms.lumitext(text=info_text, ax=ax)
 
     a, b, c = mplhep.cms.text(
-        text=f"Preliminary\nSignal{coupling}\nQCD+Signal", ax=ax, loc=2
+        text=f"Preliminary\nSingleLeptonCR\nData", ax=ax, loc=2
+        # text=f"Preliminary\nSignal{coupling}\nQCD+Signal", ax=ax, loc=2
     )
     if text_color is not None:
         a.set(color=text_color)

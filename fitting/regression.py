@@ -60,12 +60,12 @@ class TrainedModel:
     learned_noise: bool = False
 
 
-def makeLikelihood(data, learn_noise=True, factor=0.1):
+def makeLikelihood(data, learn_noise=True, min_noise=None):
     likelihood = gpytorch.likelihoods.FixedNoiseGaussianLikelihood(
         noise=data.V,
         learn_additional_noise=learn_noise,
-        #noise_constraint=gpytorch.constraints.Interval(torch.min(data.V)*factor, torch.max(data.V) * factor),
-        noise_constraint=gpytorch.constraints.Interval(torch.min(data.V), torch.max(data.V) * factor),
+        # noise_constraint=gpytorch.constraints.Interval(torch.min(data.V)*factor, torch.max(data.V) * factor),
+        noise_constraint=gpytorch.constraints.GreaterThan(float(min_noise)),
     )
     return likelihood
 
@@ -101,7 +101,9 @@ def loadModel(trained_model, other_data=None):
 
     with gpytorch.settings.min_fixed_noise(double_value=min_fixed_noise):
         likelihood = makeLikelihood(
-            normalized_blinded_data, learn_noise=trained_model.learned_noise
+            normalized_blinded_data,
+            learn_noise=trained_model.learned_noise,
+            min_noise=transform.transform_y.transformVariances(1.8),
         )
         # likelihood = gpytorch.likelihoods.FixedNoiseGaussianLikelihood(
         #     noise=normalized_blinded_data.V,
@@ -241,6 +243,8 @@ def optimizeHyperparams(
 
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
     mll = gpytorch.mlls.ExactMarginalLogLikelihood(likelihood, model)
+    mll = gpytorch.mlls.LeaveOneOutPseudoLikelihood(likelihood, model)
+
     evidence = None
 
     training_progress = {
@@ -347,7 +351,11 @@ def updateModelNewData(
     norm_test = normalized_test_data
 
     with gpytorch.settings.min_fixed_noise(double_value=min_fixed_noise):
-        likelihood = makeLikelihood(train, learn_noise=learn_noise)
+        likelihood = makeLikelihood(
+            train,
+            learn_noise=learn_noise,
+            min_noise=train_transform.transform_y.transformVariances(1.8),
+        )
         # likelihoods = makeLikelihood(train.V)
         # likelihood = gpytorch.likelihoods.FixedNoiseGaussianLikelihood(
         #     noise=train.V,
@@ -422,7 +430,11 @@ def doCompleteRegression(
     # logger.info(train.V)
     logger.info(f"Learn additional noise is: {learn_noise}")
     with gpytorch.settings.min_fixed_noise(double_value=min_fixed_noise):
-        likelihood = makeLikelihood(train, learn_noise=learn_noise)
+        likelihood = makeLikelihood(
+            train,
+            learn_noise=learn_noise,
+            min_noise=train_transform.transform_y.transformVariances(1.8),
+        )
         # likelihood = gpytorch.likelihoods.FixedNoiseGaussianLikelihood(
         #     noise=train.V,
         #     learn_additional_noise=learn_noise,

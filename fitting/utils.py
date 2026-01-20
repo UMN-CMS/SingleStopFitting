@@ -53,6 +53,14 @@ def chi2Bins(obs, exp, var, mask=None, min_var=0, power=2):
     return torch.sum(abs(obs - exp).pow(power) / var, dim=-1) / exp.size(-1)
 
 
+def diffExp(obs, exp, mask=None, min_var=0, power=2):
+    if mask is not None:
+        obs, exp = obs[mask], exp[mask]
+    # obs, exp, var = obs[..., m], exp[..., m], var[..., m]
+
+    return torch.sum(abs(obs - exp).pow(power), dim=-1) / exp.size(-1)
+
+
 def fixMVN(mvn):
     with gpytorch.settings.cholesky_max_tries(10000):
         X = linear_operator.utils.cholesky.psd_safe_cholesky(mvn.covariance_matrix)
@@ -155,5 +163,8 @@ def computePosterior(
 
     if slope is not None and intercept is not None:
         pred_dist = affineTransformMVN(pred_dist, slope, intercept)
+    pred_dist = gpytorch.distributions.MultivariateNormal(
+        torch.clamp(pred_dist.mean, 0), pred_dist.covariance_matrix
+    )
 
     return pred_dist

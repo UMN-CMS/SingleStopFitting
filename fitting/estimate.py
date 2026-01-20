@@ -529,7 +529,7 @@ def main(args):
         scale_background=args.scale_background,
         signal_injections=args.injected,
         use_fit_as_signal=args.use_fit_as_signal,
-        min_base_variance=1.8**2,
+        min_base_variance=0,#1.8**2,
         use_other_model=other_model,
         inject_other_signals=args.inject_other_signals,
         extra_metadata=extra_metadata,

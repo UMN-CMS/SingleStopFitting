@@ -37,6 +37,7 @@ class DataCard:
         self.process_rates = {}
         self.process_shapes = {}
         self.process_shape_systematics = {}
+        self.auto_mc_stat_channels = []
 
     def addProcess(self, process: Process):
         self.processes.append(process)
@@ -46,6 +47,9 @@ class DataCard:
 
     def addChannel(self, channel: Channel):
         self.channels.append(channel)
+
+    def addAutoMCStats(self, channel: Channel):
+        self.auto_mc_stat_channels.append(channel)
 
     def setProcessSystematic(
         self, process: Process, systematic: Systematic, channel: Channel, value: float
@@ -152,6 +156,11 @@ class DataCard:
         lines = formatLines(rows, separator="  ")
         lines.insert(4, "#" * len(lines[0]))
         return lines
+
+    def constructEpilogue(self):
+        return [
+            f"{channel.name} autoMCStats 10" for channel in self.auto_mc_stat_channels
+        ]
 
     def dumps(self):
         lines = self.constructHeader()

@@ -19,13 +19,15 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-def plotDiagnostics(save_dir, trained_model, **kwargs):
+def plotDiagnostics(save_dir, trained_model, other_train_mask=None, **kwargs):
     model = regression.loadModel(trained_model)
     tm = trained_model.metadata
     sp = tm.signal_point
     coupling, mt, mx = sp.coupling, sp.mt, sp.mx
     mt, mx = float(mt), float(mx)
     all_data, train_mask = regression.getModelingData(trained_model)
+    if other_train_mask is not None:
+        train_mask = other_train_mask
     pred_dist = regression.getPosteriorProcess(model, all_data, trained_model.transform)
 
     pred_data = DataValues(all_data.X, pred_dist.mean, pred_dist.variance, all_data.E)
@@ -157,7 +159,13 @@ def main(args):
 
     out = args.outdir or Path(args.input).parent
     m = torch.load(args.input, weights_only=False)
-    plotDiagnostics(out, m)
+    if args.other_train_mask is not None:
+        t = torch.load(args.other_train_mask, weights_only=False)
+        _, t = regression.getModelingData(t)
+    else:
+        t = None
+        
+    plotDiagnostics(out, m, other_train_mask=t)
 
 
 def runEigens(args):
@@ -179,6 +187,9 @@ def runCovars(args):
 def addDiagnosticsToParser(parser):
     parser.add_argument(
         "-o", "--outdir", default=None, help="Output directory for plots"
+    )
+    parser.add_argument(
+        "-t", "--other-train-mask", default=None, help="Take a training mask from another background"
     )
 
     parser.add_argument("input")
